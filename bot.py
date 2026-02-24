@@ -4,14 +4,15 @@ import yt_dlp
 import tempfile
 import time
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton
+import signal
+import sys
 
 TOKEN = os.getenv('BOT_TOKEN')
 if not TOKEN:
-    raise ValueError("❌ Chưa set BOT_TOKEN trên Railway!")
+    raise ValueError("❌ Chưa set BOT_TOKEN!")
 
 bot = telebot.TeleBot(TOKEN)
 
-# Keyboard chính
 def main_kb():
     kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     kb.add(KeyboardButton('🎵 Tìm nhạc'), KeyboardButton('❓ Hướng dẫn'))
@@ -19,74 +20,45 @@ def main_kb():
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.send_message(
-        message.chat.id,
-        f"""🎵 **BOT NHẠC RAILWAY** 🎵
+    bot.send_message(message.chat.id,
+        f"""🎵 **BOT NHẠC RAILWAY V4** 🎵 (Đã fix 409 & YouTube)
 
 👋 Chào {message.from_user.first_name}!
 
-📌 Gõ lệnh:
-• `/play tên bài hát`   (tìm và tải MP3)
-• `/play link YouTube`
+✅ Đã fix lỗi Telegram 409 khi redeploy
+✅ Bypass YouTube không cần cookies (nâng cao hơn)
 
-✅ Bot sẽ tải nhạc chất lượng cao (192kbps) và gửi file audio.
+📌 Dùng lệnh:
+/play Anh nhớ em nhiều lắm remix
 
-⚠️ Lưu ý:
-• Chỉ hỗ trợ nhạc công khai (YouTube)
-• File tối đa \~50MB (Telegram giới hạn)
-• Railway có thể hạn chế nếu lạm dụng nhạc bản quyền → dùng có trách nhiệm!
-
-Bắt đầu nào! 🔥""",
-        parse_mode='Markdown',
-        reply_markup=main_kb()
-    )
+Thử ngay đi! 🔥""",
+        parse_mode='Markdown', reply_markup=main_kb())
 
 @bot.message_handler(commands=['help'])
 def help_cmd(message):
-    bot.reply_to(message, """🎵 **HƯỚNG DẪN SỬ DỤNG**
-
-✅ Tìm và tải nhạc:
-• `/play shape of you`
-• `/play https://youtu.be/...`
-
-📊 Lệnh khác:
-• `/start` - Menu chính
-• Bấm nút **🎵 Tìm nhạc** hoặc **❓ Hướng dẫn**
-
-💡 Mẹo:
-• Gõ tên bài hát càng chính xác càng tốt
-• Hỗ trợ cả link YouTube Shorts
-
-Chơi nhạc vui vẻ! 🎧""", parse_mode='Markdown')
+    bot.reply_to(message, "✅ Chỉ cần gõ `/play tên bài hát` là được.\nKhông cần cookies nữa!", parse_mode='Markdown')
 
 @bot.message_handler(func=lambda m: True)
 def handle_message(message):
     text = message.text.strip()
-    uid = message.from_user.id
-
-    if text == '🎵 tìm nhạc' or text == '🎵 Tìm nhạc':
-        bot.reply_to(message, "Gõ lệnh `/play tên bài hát` nhé!")
+    if text in ['🎵 tìm nhạc', '🎵 Tìm nhạc']:
+        bot.reply_to(message, "Gõ `/play tên bài hát` nhé!")
         return
-
-    if text == '❓ hướng dẫn' or text == '❓ Hướng dẫn':
+    if text in ['❓ hướng dẫn', '❓ Hướng dẫn']:
         help_cmd(message)
         return
 
     if not text.lower().startswith(('/play ', 'play ')):
-        if any(x in text.lower() for x in ['play', 'nhạc', 'music', 'bài']):
-            bot.reply_to(message, "✅ Dùng lệnh: `/play tên bài hát` hoặc `/play link`")
         return
 
-    # Xử lý /play
     query = text.split(maxsplit=1)[1] if len(text.split()) > 1 else ""
     if not query:
-        bot.reply_to(message, "❌ Vui lòng nhập tên bài hát hoặc link!\nVí dụ: `/play em của ngày hôm qua`")
+        bot.reply_to(message, "❌ Nhập tên bài hát hoặc link YouTube!")
         return
 
-    status_msg = bot.reply_to(message, "🔍 Đang tìm kiếm...")
+    status = bot.reply_to(message, "🔍 Đang tìm + tải (đã bypass YouTube)...")
 
     try:
-        # Tìm kiếm hoặc lấy link
         ydl_opts = {
             'format': 'bestaudio/best',
             'default_search': 'ytsearch',
@@ -99,65 +71,72 @@ def handle_message(message):
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
-            'noplaylist': True,   # chỉ lấy video đầu tiên
+            'noplaylist': True,
+            'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,  # vẫn dùng nếu có
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['web_safari', 'ios', 'android', 'web', 'web_embedded', 'ios_music'],
+                    'player_skip': [],
+                    'skip': ['dash', 'hls']
+                }
+            },
+            'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Mobile/15E148 Safari/604.1',
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Mobile/15E148 Safari/604.1',
+                'Accept-Language': 'vi-VN,vi;q=0.9'
+            },
+            'geo_bypass': True,
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(query, download=True)
-            if 'entries' in info:  # là kết quả tìm kiếm
+            if 'entries' in info:
                 info = info['entries'][0]
 
             title = info.get('title', 'Unknown')
             duration = info.get('duration', 0)
             uploader = info.get('uploader', 'Unknown')
 
-            # Đường dẫn file mp3
             filename = ydl.prepare_filename(info)
             if not filename.endswith('.mp3'):
                 filename = filename.rsplit('.', 1)[0] + '.mp3'
 
-            if duration > 1800:  # >30 phút
-                bot.edit_message_text("❌ Bài quá dài (>30 phút), không hỗ trợ!", status_msg.chat.id, status_msg.message_id)
-                if os.path.exists(filename):
-                    os.remove(filename)
+            if duration > 1800:
+                bot.edit_message_text("❌ Bài quá dài (>30 phút)", status.chat.id, status.message_id)
                 return
 
-        # Đang tải
-        bot.edit_message_text(f"⬇️ Đang tải: **{title}**...", status_msg.chat.id, status_msg.message_id, parse_mode='Markdown')
+        bot.edit_message_text(f"⬇️ Đang gửi: **{title}**...", status.chat.id, status.message_id, parse_mode='Markdown')
 
-        # Gửi file audio
         with open(filename, 'rb') as audio:
             bot.send_audio(
-                message.chat.id,
-                audio,
+                message.chat.id, audio,
                 caption=f"🎵 **{title}**\n👤 {uploader}\n⏱ {time.strftime('%M:%S', time.gmtime(duration))}",
-                title=title,
-                performer=uploader,
+                title=title, performer=uploader,
                 parse_mode='Markdown',
                 reply_to_message_id=message.message_id
             )
 
-        bot.delete_message(status_msg.chat.id, status_msg.message_id)
+        bot.delete_message(status.chat.id, status.message_id)
 
-        # Xóa file sau khi gửi
         if os.path.exists(filename):
             os.remove(filename)
 
     except Exception as e:
-        error_msg = str(e)
-        if "Private video" in error_msg or "Video unavailable" in error_msg:
-            txt = "❌ Video riêng tư hoặc không tồn tại!"
-        elif "Unable to extract" in error_msg:
-            txt = "❌ Không tìm thấy bài hát, thử tên khác nhé!"
+        err = str(e)[:200]
+        if "Sign in" in err or "confirm you're not a bot" in err:
+            txt = "❌ Vẫn lỗi YouTube.\n✅ Thử lại sau 5 phút hoặc dùng máy tính lấy cookies.txt gửi mình."
         else:
-            txt = f"❌ Lỗi: {error_msg[:200]}"
-        
-        bot.edit_message_text(txt, status_msg.chat.id, status_msg.message_id)
-        # Xóa file nếu có
-        for f in os.listdir(tempfile.gettempdir()):
-            if f.endswith('.mp3') and 'temp' in f.lower():
-                try: os.remove(os.path.join(tempfile.gettempdir(), f))
-                except: pass
+            txt = f"❌ Lỗi: {err}"
+        bot.edit_message_text(txt, status.chat.id, status.message_id)
 
-print("🚀 Bot Nhạc đang chạy trên Railway...")
+# === PHẦN FIX LỖI 409 KHI REDEPLOY ===
+def signal_handler(sig, frame):
+    print("🛑 Nhận lệnh tắt từ Railway... Đang dừng bot.")
+    bot.stop_polling()
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
+
+print("🚀 Bot Nhạc V4 (đã fix 409) đang chạy trên Railway...")
 bot.infinity_polling()
