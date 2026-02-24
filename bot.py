@@ -42,10 +42,12 @@ Chào {message.from_user.first_name}!
 /play tên bài hát
 /play link YouTube
 
-Sau khi bot tìm được bài, anh có thể chọn **tốc độ phát** bằng nút (1x, 1.15x, 1.25x, 1.5x, 2x)!
+Sau khi bot tìm được bài, chọn **tốc độ phát** bằng nút (1x, 1.15x, 1.25x, 1.5x, 2x)!
 
 Ví dụ:
 /play Anh nhớ em nhiều lắm remix
+
+Nếu lỗi khu vực → thử thêm "full" hoặc "lyrics" vào tên bài!
 
 Chơi nhạc vui nhé! 🔥""",
         parse_mode='Markdown',
@@ -62,9 +64,9 @@ def help_cmd(message):
 Sau khi tìm thấy bài, chọn tốc độ phát bằng nút (1x, 1.15x, 1.25x, 1.5x, 2x).
 
 Nếu lỗi:
-- "Sign in..." → upload cookies.txt mới từ Chrome
-- "Video unavailable" → thử tên bài + "full" hoặc "lyrics"
-- "Không hỗ trợ audio..." → thử link video dài hơn
+- "Sign in..." → upload cookies.txt mới từ Chrome (extension Get cookies.txt LOCALLY)
+- "Video unavailable" hoặc "không khả dụng khu vực" → thử tên bài + "full" hoặc "lyrics"
+- "Requested format is not available" → thử link video dài hơn hoặc tên khác
 
 Thêm bot vào group cũng dùng được!""",
         parse_mode='Markdown'
@@ -88,13 +90,13 @@ def handle_message(message):
         bot.reply_to(message, "❌ Nhập tên bài hát hoặc link YouTube!")
         return
 
-    user_data[message.from_user.id] = {'query': query}  # Lưu query tạm
+    user_data[message.from_user.id] = {'query': query}
 
     status = bot.reply_to(message, "🔍 Đang tìm nhạc...")
 
     try:
         ydl_opts = {
-            'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
+            'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best[height<=480]/best/bestvideo+bestaudio/best',
             'default_search': 'ytsearch',
             'quiet': True,
             'no_warnings': True,
@@ -107,6 +109,9 @@ def handle_message(message):
             }],
             'noplaylist': True,
             'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
+            'retries': 10,
+            'fragment_retries': 10,
+            'concurrent_fragment_downloads': 5,
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -130,7 +135,7 @@ def handle_message(message):
                     os.remove(filename)
                 return
 
-        # Lưu filename để dùng khi chọn speed
+        # Lưu dữ liệu để dùng khi chọn speed
         user_data[message.from_user.id]['filename'] = filename
         user_data[message.from_user.id]['title'] = title
         user_data[message.from_user.id]['uploader'] = uploader
@@ -147,6 +152,10 @@ def handle_message(message):
         err = str(e)[:200]
         if "Sign in" in err or "confirm you're not a bot" in err:
             msg = "❌ Lỗi YouTube: cần cookies.txt mới. Lấy từ Chrome và upload lại!"
+        elif "unavailable" in err or "not available" in err:
+            msg = "❌ Video không khả dụng hoặc bị chặn khu vực. Thử tên bài + 'full' hoặc 'lyrics'!"
+        elif "format" in err or "not available" in err:
+            msg = "❌ Video không hỗ trợ audio chất lượng cao. Thử link khác!"
         else:
             msg = f"❌ Lỗi: {err}"
         bot.edit_message_text(msg, status.chat.id, status.message_id)
@@ -171,7 +180,7 @@ def callback_speed(call):
         temp_dir = tempfile.gettempdir()
         spedup_filename = os.path.join(temp_dir, f"spedup_{speed}_{os.path.basename(filename)}")
 
-        # FFmpeg tăng tốc độ phát
+        # FFmpeg tăng tốc độ phát (atempo filter)
         os.system(f'ffmpeg -y -i "{filename}" -filter:a "atempo={speed}" -vn "{spedup_filename}" -loglevel quiet')
 
         if not os.path.exists(spedup_filename):
