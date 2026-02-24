@@ -1,176 +1,71 @@
+import asyncio
 import os
-import telebot
-import yt_dlp
-import tempfile
-import time
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton
-import signal
-import sys
+from pyrogram import Client, filters
+from pyrogram.types import Message
+from pytgcalls import PyTgCalls, StreamType
+from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
+from pytgcalls.types.input_stream.quality import HighQualityAudio, HighQualityVideo
+from yt_dlp import YoutubeDL
 
-TOKEN = os.getenv('BOT_TOKEN')
-if not TOKEN:
-    raise ValueError("❌ Chưa set BOT_TOKEN trên Railway!")
+# Thay bằng của bạn (từ my.telegram.org)
+api_id = int(os.getenv("API_ID"))
+api_hash = os.getenv("API_HASH")
+session_name = "musicbot"  # tên file session
 
-bot = telebot.TeleBot(TOKEN)
+app = Client(session_name, api_id, api_hash)
+calls = PyTgCalls(app)
 
-def main_kb():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    kb.add(KeyboardButton('🎵 Tìm nhạc'), KeyboardButton('❓ Hướng dẫn'))
-    return kb
+ydl_opts = {
+    "format": "bestaudio[ext=m4a]",
+    "quiet": True,
+    "no_warnings": True,
+    "outtmpl": "downloads/%(id)s.%(ext)s",
+    "postprocessors": [{
+        "key": "FFmpegExtractAudio",
+        "preferredcodec": "m4a",
+        "preferredquality": "192",
+    }],
+}
 
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.send_message(
-        message.chat.id,
-        f"""🎵 **BOT NHẠC RAILWAY V6** 🎵 (Python 3.12.3)
+@app.on_message(filters.command("play") & filters.group)
+async def play(_, message: Message):
+    if len(message.command) < 2:
+        return await message.reply("Gõ /play <tên bài hát hoặc link YouTube>")
 
-Chào {message.from_user.first_name}!
-
-✅ Đã fix lỗi "Sign in to confirm you're not a bot"
-✅ Fix lỗi tìm kiếm không có kết quả
-✅ Fix lỗi format audio không khả dụng
-
-Dùng lệnh:
-/play tên bài hát
-/play link YouTube
-
-Thử ngay: /play Anh nhớ em nhiều lắm remix
-
-Chúc nghe nhạc vui! 🔥""",
-        parse_mode='Markdown',
-        reply_markup=main_kb()
-    )
-
-@bot.message_handler(commands=['help'])
-def help_cmd(message):
-    bot.reply_to(message,
-        """✅ Chỉ cần gõ `/play tên bài hát` hoặc link YouTube.
-Đã fix lỗi tìm kiếm và format audio.
-Nếu vẫn lỗi YouTube → lấy cookies.txt mới và upload lại.""",
-        parse_mode='Markdown'
-    )
-
-@bot.message_handler(func=lambda m: True)
-def handle_message(message):
-    text = message.text.strip().lower()
-
-    if text in ['🎵 tìm nhạc', 'tìm nhạc']:
-        bot.reply_to(message, "Gõ lệnh `/play tên bài hát` nhé!")
-        return
-
-    if text in ['❓ hướng dẫn', 'hướng dẫn']:
-        help_cmd(message)
-        return
-
-    if not text.startswith(('/play ', 'play ')):
-        return
-
-    query = text.split(maxsplit=1)[1] if len(text.split()) > 1 else ""
-    if not query:
-        bot.reply_to(message, "❌ Vui lòng nhập tên bài hát hoặc link YouTube!")
-        return
-
-    status = bot.reply_to(message, "🔍 Đang tìm và tải nhạc...")
+    query = " ".join(message.command[1:])
+    await message.reply("🔍 Đang tìm nhạc...")
 
     try:
-        ydl_opts = {
-            'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
-            'default_search': 'ytsearch',
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': False,
-            'outtmpl': os.path.join(tempfile.gettempdir(), '%(title)s.%(ext)s'),
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-            'noplaylist': True,
-            'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['ios', 'android', 'web', 'web_safari', 'ios_music'],
-                    'player_skip': ['js', 'configs', 'web_prereqs'],
-                    'skip': ['dash', 'hls', 'authcheck']
-                }
-            },
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7'
-            },
-            'geo_bypass': True,
-            'prefer_ffmpeg': True,
-        }
-
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(query, download=True)
-
             if 'entries' in info:
-                if not info['entries']:
-                    raise Exception("Không tìm thấy kết quả nào phù hợp!")
                 info = info['entries'][0]
+            file_path = ydl.prepare_filename(info)
 
-            title = info.get('title', 'Unknown')
-            duration = info.get('duration', 0)
-            uploader = info.get('uploader', 'Unknown')
-
-            filename = ydl.prepare_filename(info)
-            if not filename.endswith('.mp3'):
-                filename = filename.rsplit('.', 1)[0] + '.mp3'
-
-            if duration > 1800:  # > 30 phút
-                bot.edit_message_text(
-                    "❌ Bài hát quá dài (>30 phút), không hỗ trợ!",
-                    status.chat.id, status.message_id
-                )
-                if os.path.exists(filename):
-                    os.remove(filename)
-                return
-
-        bot.edit_message_text(
-            f"⬇️ Đang gửi file: **{title}**...",
-            status.chat.id, status.message_id,
-            parse_mode='Markdown'
+        chat_id = message.chat.id
+        await calls.join_group_call(
+            chat_id,
+            AudioPiped(
+                file_path,
+                audio_parameters=HighQualityAudio(),
+            ),
+            stream_type=StreamType().pulse_stream,
         )
-
-        with open(filename, 'rb') as audio:
-            bot.send_audio(
-                message.chat.id,
-                audio,
-                caption=f"🎵 **{title}**\n👤 {uploader}\n⏱ {time.strftime('%M:%S', time.gmtime(duration))}",
-                title=title,
-                performer=uploader,
-                parse_mode='Markdown',
-                reply_to_message_id=message.message_id
-            )
-
-        bot.delete_message(status.chat.id, status.message_id)
-
-        if os.path.exists(filename):
-            os.remove(filename)
-
+        await message.reply(f"🎵 Đang phát: **{info['title']}** trong voice chat!")
     except Exception as e:
-        err_str = str(e)[:250]
-        if "Sign in to confirm you're not a bot" in err_str:
-            msg = "❌ Lỗi YouTube: cần cookies.txt mới. Hãy lấy lại từ Chrome và upload lên Railway!"
-        elif "Không tìm thấy kết quả" in err_str or "entries" in err_str:
-            msg = "❌ Không tìm thấy bài hát. Thử tên chính xác hơn hoặc dùng link YouTube đầy đủ!"
-        elif "format is not available" in err_str:
-            msg = "❌ Video không hỗ trợ tải audio chất lượng cao. Thử link khác!"
-        else:
-            msg = f"❌ Lỗi: {err_str}"
+        await message.reply(f"Lỗi: {str(e)}")
 
-        bot.edit_message_text(msg, status.chat.id, status.message_id)
+@app.on_message(filters.command("stop") & filters.group)
+async def stop(_, message: Message):
+    chat_id = message.chat.id
+    await calls.leave_group_call(chat_id)
+    await message.reply("⏹ Đã dừng nhạc và rời voice chat!")
 
-# Graceful shutdown để tránh lỗi 409 khi redeploy
-def signal_handler(sig, frame):
-    print("🛑 Railway yêu cầu dừng bot... Đang shutdown.")
-    bot.stop_polling()
-    sys.exit(0)
+async def main():
+    await app.start()
+    print("Bot đang chạy...")
+    await calls.start()
+    await asyncio.Event().wait()  # Giữ bot chạy mãi
 
-signal.signal(signal.SIGTERM, signal_handler)
-signal.signal(signal.SIGINT, signal_handler)
-
-print("🚀 Bot Nhạc đang chạy trên Python 3.12.3...")
-bot.infinity_polling()
+if __name__ == "__main__":
+    asyncio.run(main())
