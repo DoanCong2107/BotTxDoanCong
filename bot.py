@@ -3,7 +3,7 @@ import telebot
 import yt_dlp
 import tempfile
 import time
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
 TOKEN = os.getenv('BOT_TOKEN')
 if not TOKEN:
@@ -11,26 +11,38 @@ if not TOKEN:
 
 bot = telebot.TeleBot(TOKEN)
 
-SPEED = 1.15  # Lock tốc độ ở 1.15x
+# Lưu dữ liệu tạm cho từng user khi chọn speed
+user_data = {}
 
 def main_kb():
     kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     kb.add(KeyboardButton('🎵 Tìm nhạc'), KeyboardButton('❓ Hướng dẫn'))
     return kb
 
+def speed_kb():
+    kb = InlineKeyboardMarkup(row_width=3)
+    kb.add(
+        InlineKeyboardButton("1x (Bình thường)", callback_data="speed_1.0"),
+        InlineKeyboardButton("1.15x", callback_data="speed_1.15"),
+        InlineKeyboardButton("1.25x", callback_data="speed_1.25"),
+        InlineKeyboardButton("1.5x", callback_data="speed_1.5"),
+        InlineKeyboardButton("2x (Nhanh)", callback_data="speed_2.0")
+    )
+    return kb
+
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.send_message(
         message.chat.id,
-        f"""🎵 **BOT NHẠC MP3 TỰ ĐỘNG 1.15x**
+        f"""🎵 **BOT TẢI NHẠC MP3** (YouTube → MP3)
 
 Chào {message.from_user.first_name}!
-
-Tất cả bài hát sẽ tự động được tăng tốc độ phát lên **1.15x** (nhạc nhanh hơn 15%) mà không cần chọn.
 
 📌 Gõ lệnh:
 /play tên bài hát
 /play link YouTube
+
+Sau khi bot tìm được bài, anh có thể chọn **tốc độ phát** bằng nút (1x, 1.15x, 1.25x, 1.5x, 2x)!
 
 Ví dụ:
 /play Anh nhớ em nhiều lắm remix
@@ -47,12 +59,12 @@ def help_cmd(message):
 
 /play tên bài hát hoặc link YouTube
 
-Tất cả nhạc sẽ tự động phát ở tốc độ **1.15x** (nhanh hơn 15%).
+Sau khi tìm thấy bài, chọn tốc độ phát bằng nút (1x, 1.15x, 1.25x, 1.5x, 2x).
 
 Nếu lỗi:
-- "Sign in..." → upload cookies.txt mới từ Chrome (extension Get cookies.txt LOCALLY)
-- "Không hỗ trợ audio..." → thử link dài hơn
-- "Video unavailable" → video bị chặn, thử bài khác
+- "Sign in..." → upload cookies.txt mới từ Chrome
+- "Video unavailable" → thử tên bài + "full" hoặc "lyrics"
+- "Không hỗ trợ audio..." → thử link video dài hơn
 
 Thêm bot vào group cũng dùng được!""",
         parse_mode='Markdown'
@@ -76,7 +88,9 @@ def handle_message(message):
         bot.reply_to(message, "❌ Nhập tên bài hát hoặc link YouTube!")
         return
 
-    status = bot.reply_to(message, f"🔍 Đang tìm + xử lý nhạc ở tốc độ {SPEED}x...")
+    user_data[message.from_user.id] = {'query': query}  # Lưu query tạm
+
+    status = bot.reply_to(message, "🔍 Đang tìm nhạc...")
 
     try:
         ydl_opts = {
@@ -116,45 +130,72 @@ def handle_message(message):
                     os.remove(filename)
                 return
 
-        # Tạo file mới với tốc độ 1.15x
-        temp_dir = tempfile.gettempdir()
-        spedup_filename = os.path.join(temp_dir, f"spedup_{SPEED}_{os.path.basename(filename)}")
+        # Lưu filename để dùng khi chọn speed
+        user_data[message.from_user.id]['filename'] = filename
+        user_data[message.from_user.id]['title'] = title
+        user_data[message.from_user.id]['uploader'] = uploader
+        user_data[message.from_user.id]['duration'] = duration
 
-        # FFmpeg tăng tốc độ phát (atempo filter)
-        os.system(f'ffmpeg -y -i "{filename}" -filter:a "atempo={SPEED}" -vn "{spedup_filename}" -loglevel quiet')
-
-        if not os.path.exists(spedup_filename):
-            raise Exception("Không thể tăng tốc độ file")
-
-        bot.edit_message_text(f"⬇️ Đang gửi file ở tốc độ {SPEED}x: **{title}**...", status.chat.id, status.message_id, parse_mode='Markdown')
-
-        with open(spedup_filename, 'rb') as audio:
-            bot.send_audio(
-                message.chat.id,
-                audio,
-                caption=f"🎵 **{title}** (tốc độ {SPEED}x)\n👤 {uploader}\n⏱ {time.strftime('%M:%S', time.gmtime(duration / SPEED))}",
-                title=f"{title} ({SPEED}x)",
-                performer=uploader,
-                reply_to_message_id=message.message_id
-            )
-
-        bot.delete_message(status.chat.id, status.message_id)
-
-        # Xóa file tạm
-        os.remove(filename)
-        os.remove(spedup_filename)
+        bot.edit_message_text(
+            f"🎵 **Tìm thấy: {title}**\nChọn tốc độ phát:",
+            status.chat.id, status.message_id,
+            parse_mode='Markdown',
+            reply_markup=speed_kb()
+        )
 
     except Exception as e:
         err = str(e)[:200]
         if "Sign in" in err or "confirm you're not a bot" in err:
             msg = "❌ Lỗi YouTube: cần cookies.txt mới. Lấy từ Chrome và upload lại!"
-        elif "unavailable" in err or "not available" in err:
-            msg = "❌ Video không khả dụng hoặc bị chặn khu vực. Thử tên/link khác!"
-        elif "format" in err or "not available" in err:
-            msg = "❌ Video không hỗ trợ audio chất lượng cao. Thử link video dài hơn!"
         else:
             msg = f"❌ Lỗi: {err}"
         bot.edit_message_text(msg, status.chat.id, status.message_id)
 
-print("🚀 Bot Nhạc MP3 tự động 1.15x đang chạy...")
+@bot.callback_query_handler(func=lambda call: call.data.startswith('speed_'))
+def callback_speed(call):
+    user_id = call.from_user.id
+    if user_id not in user_data or 'filename' not in user_data[user_id]:
+        bot.answer_callback_query(call.id, "Hết hạn, hãy tìm bài mới bằng /play!")
+        return
+
+    speed = float(call.data.split('_')[1])
+    data = user_data[user_id]
+    filename = data['filename']
+    title = data['title']
+    uploader = data['uploader']
+    duration = data['duration']
+
+    bot.answer_callback_query(call.id, f"Đang xử lý ở tốc độ {speed}x...")
+
+    try:
+        temp_dir = tempfile.gettempdir()
+        spedup_filename = os.path.join(temp_dir, f"spedup_{speed}_{os.path.basename(filename)}")
+
+        # FFmpeg tăng tốc độ phát
+        os.system(f'ffmpeg -y -i "{filename}" -filter:a "atempo={speed}" -vn "{spedup_filename}" -loglevel quiet')
+
+        if not os.path.exists(spedup_filename):
+            raise Exception("Không thể tăng tốc độ file")
+
+        bot.send_audio(
+            call.message.chat.id,
+            open(spedup_filename, 'rb'),
+            caption=f"🎵 **{title}** (tốc độ {speed}x)\n👤 {uploader}\n⏱ {time.strftime('%M:%S', time.gmtime(duration / speed))}",
+            title=f"{title} ({speed}x)",
+            performer=uploader,
+            reply_to_message_id=call.message.message_id
+        )
+
+        os.remove(spedup_filename)
+
+    except Exception as e:
+        bot.send_message(call.message.chat.id, f"❌ Lỗi khi tăng tốc: {str(e)[:200]}")
+
+    finally:
+        if os.path.exists(filename):
+            os.remove(filename)
+        if user_id in user_data:
+            del user_data[user_id]
+
+print("🚀 Bot Nhạc MP3 với nút chọn speed đang chạy...")
 bot.infinity_polling()
