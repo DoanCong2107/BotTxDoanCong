@@ -21,22 +21,22 @@ def main_kb():
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.send_message(message.chat.id,
-        f"""🎵 **BOT NHẠC RAILWAY V4** 🎵 (Đã fix 409 & YouTube)
+        f"""🎵 **BOT NHẠC RAILWAY V5** 🎵 (Fix index & format)
 
 👋 Chào {message.from_user.first_name}!
 
-✅ Đã fix lỗi Telegram 409 khi redeploy
-✅ Bypass YouTube không cần cookies (nâng cao hơn)
+✅ Đã fix "list index out of range" (không tìm thấy bài)
+✅ Fix "format not available" (video không có audio tốt, fallback tự động)
 
 📌 Dùng lệnh:
 /play Anh nhớ em nhiều lắm remix
 
-Thử ngay đi! 🔥""",
+Thử lại ngay! 🔥""",
         parse_mode='Markdown', reply_markup=main_kb())
 
 @bot.message_handler(commands=['help'])
 def help_cmd(message):
-    bot.reply_to(message, "✅ Chỉ cần gõ `/play tên bài hát` là được.\nKhông cần cookies nữa!", parse_mode='Markdown')
+    bot.reply_to(message, "✅ Chỉ cần gõ `/play tên bài hát` hoặc link. Đã fix lỗi tìm kiếm và format!", parse_mode='Markdown')
 
 @bot.message_handler(func=lambda m: True)
 def handle_message(message):
@@ -53,14 +53,14 @@ def handle_message(message):
 
     query = text.split(maxsplit=1)[1] if len(text.split()) > 1 else ""
     if not query:
-        bot.reply_to(message, "❌ Nhập tên bài hát hoặc link YouTube!")
+        bot.reply_to(message, "❌ Nhập tên bài hoặc link!")
         return
 
-    status = bot.reply_to(message, "🔍 Đang tìm + tải (đã bypass YouTube)...")
+    status = bot.reply_to(message, "🔍 Đang tìm + tải (đã fix lỗi)...")
 
     try:
         ydl_opts = {
-            'format': 'bestaudio/best',
+            'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',  # Fallback format để fix "not available"
             'default_search': 'ytsearch',
             'quiet': True,
             'no_warnings': True,
@@ -72,7 +72,7 @@ def handle_message(message):
                 'preferredquality': '192',
             }],
             'noplaylist': True,
-            'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,  # vẫn dùng nếu có
+            'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
             'extractor_args': {
                 'youtube': {
                     'player_client': ['web_safari', 'ios', 'android', 'web', 'web_embedded', 'ios_music'],
@@ -86,12 +86,15 @@ def handle_message(message):
                 'Accept-Language': 'vi-VN,vi;q=0.9'
             },
             'geo_bypass': True,
+            'prefer_ffmpeg': True,  # Ưu tiên ffmpeg để convert tốt hơn
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(query, download=True)
             if 'entries' in info:
-                info = info['entries'][0]
+                if not info['entries']:
+                    raise Exception("Không tìm thấy bài hát nào! Thử tên khác hoặc link đầy đủ.")
+                info = info['entries'][0]  # Fix index out of range bằng check
 
             title = info.get('title', 'Unknown')
             duration = info.get('duration', 0)
@@ -103,6 +106,8 @@ def handle_message(message):
 
             if duration > 1800:
                 bot.edit_message_text("❌ Bài quá dài (>30 phút)", status.chat.id, status.message_id)
+                if os.path.exists(filename):
+                    os.remove(filename)
                 return
 
         bot.edit_message_text(f"⬇️ Đang gửi: **{title}**...", status.chat.id, status.message_id, parse_mode='Markdown')
@@ -124,19 +129,23 @@ def handle_message(message):
     except Exception as e:
         err = str(e)[:200]
         if "Sign in" in err or "confirm you're not a bot" in err:
-            txt = "❌ Vẫn lỗi YouTube.\n✅ Thử lại sau 5 phút hoặc dùng máy tính lấy cookies.txt gửi mình."
+            txt = "❌ Lỗi YouTube: Cần cookies.txt mới. Thử lấy lại từ máy tính!"
+        elif "index out of range" in err:
+            txt = "❌ Không tìm thấy bài hát! Thử tên chính xác hơn hoặc link YouTube."
+        elif "format is not available" in err:
+            txt = "❌ Video không có audio chất lượng cao. Thử link khác hoặc video dài hơn."
         else:
             txt = f"❌ Lỗi: {err}"
         bot.edit_message_text(txt, status.chat.id, status.message_id)
 
-# === PHẦN FIX LỖI 409 KHI REDEPLOY ===
+# Fix 409 khi redeploy
 def signal_handler(sig, frame):
-    print("🛑 Nhận lệnh tắt từ Railway... Đang dừng bot.")
+    print("🛑 Đang dừng bot...")
     bot.stop_polling()
     sys.exit(0)
 
 signal.signal(signal.SIGTERM, signal_handler)
 signal.signal(signal.SIGINT, signal_handler)
 
-print("🚀 Bot Nhạc V4 (đã fix 409) đang chạy trên Railway...")
+print("🚀 Bot Nhạc V5 đang chạy...")
 bot.infinity_polling()
