@@ -1,18 +1,16 @@
 import asyncio
 import os
-from pytgcalls import PyTgCalls  # vẫn dùng, nhưng backend là ntgcalls
-# ... phần còn lại giữ nguyên
 from pyrogram import Client, filters
 from pyrogram.types import Message
-from pytgcalls import PyTgCalls, StreamType
-from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
-from pytgcalls.types.input_stream.quality import HighQualityAudio, HighQualityVideo
+from py_tgcalls import PyTgCalls  # tên mới: py_tgcalls (hoặc pytgcalls nếu alias)
+from py_tgcalls.types.input_stream import AudioPiped
+from py_tgcalls.types.input_stream.quality import HighQualityAudio
 from yt_dlp import YoutubeDL
 
-# Thay bằng của bạn (từ my.telegram.org)
+# Biến môi trường
 api_id = int(os.getenv("API_ID"))
 api_hash = os.getenv("API_HASH")
-session_name = "musicbot"  # tên file session
+session_name = "musicbot"
 
 app = Client(session_name, api_id, api_hash)
 calls = PyTgCalls(app)
@@ -35,7 +33,7 @@ async def play(_, message: Message):
         return await message.reply("Gõ /play <tên bài hát hoặc link YouTube>")
 
     query = " ".join(message.command[1:])
-    await message.reply("🔍 Đang tìm nhạc...")
+    reply = await message.reply("🔍 Đang tìm nhạc...")
 
     try:
         with YoutubeDL(ydl_opts) as ydl:
@@ -51,11 +49,10 @@ async def play(_, message: Message):
                 file_path,
                 audio_parameters=HighQualityAudio(),
             ),
-            stream_type=StreamType().pulse_stream,
         )
-        await message.reply(f"🎵 Đang phát: **{info['title']}** trong voice chat!")
+        await reply.edit(f"🎵 Đang phát: **{info['title']}** trong voice chat!")
     except Exception as e:
-        await message.reply(f"Lỗi: {str(e)}")
+        await reply.edit(f"Lỗi: {str(e)}")
 
 @app.on_message(filters.command("stop") & filters.group)
 async def stop(_, message: Message):
@@ -67,7 +64,7 @@ async def main():
     await app.start()
     print("Bot đang chạy...")
     await calls.start()
-    await asyncio.Event().wait()  # Giữ bot chạy mãi
+    await asyncio.Event().wait()  # Giữ bot sống
 
 if __name__ == "__main__":
     asyncio.run(main())
