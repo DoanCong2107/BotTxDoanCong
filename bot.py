@@ -1,5 +1,7 @@
 import asyncio
 import os
+from pytgcalls import PyTgCalls  # vẫn dùng, nhưng backend là ntgcalls
+# ... phần còn lại giữ nguyên
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from pytgcalls import PyTgCalls, StreamType
