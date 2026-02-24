@@ -1,4 +1,2 @@
-pyrogram
-tgcrypto
-py-tgcalls
+pyTelegramBotAPI
 yt-dlp
