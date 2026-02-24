@@ -3,7 +3,7 @@ import telebot
 import yt_dlp
 import tempfile
 import time
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 
 TOKEN = os.getenv('BOT_TOKEN')
 if not TOKEN:
@@ -11,23 +11,9 @@ if not TOKEN:
 
 bot = telebot.TeleBot(TOKEN)
 
-# Lưu dữ liệu tạm cho từng user khi chọn speed
-user_data = {}
-
 def main_kb():
     kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     kb.add(KeyboardButton('🎵 Tìm nhạc'), KeyboardButton('❓ Hướng dẫn'))
-    return kb
-
-def speed_kb():
-    kb = InlineKeyboardMarkup(row_width=3)
-    kb.add(
-        InlineKeyboardButton("1x (Bình thường)", callback_data="speed_1.0"),
-        InlineKeyboardButton("1.15x", callback_data="speed_1.15"),
-        InlineKeyboardButton("1.25x", callback_data="speed_1.25"),
-        InlineKeyboardButton("1.5x", callback_data="speed_1.5"),
-        InlineKeyboardButton("2x (Nhanh)", callback_data="speed_2.0")
-    )
     return kb
 
 @bot.message_handler(commands=['start'])
@@ -42,12 +28,14 @@ Chào {message.from_user.first_name}!
 /play tên bài hát
 /play link YouTube
 
-Sau khi bot tìm được bài, chọn **tốc độ phát** bằng nút (1x, 1.15x, 1.25x, 1.5x, 2x)!
-
 Ví dụ:
 /play Anh nhớ em nhiều lắm remix
+/play https://youtu.be/SGffmalwaQ8
 
-Nếu lỗi khu vực → thử thêm "full" hoặc "lyrics" vào tên bài!
+Nếu lỗi:
+- "Sign in..." → upload cookies.txt mới từ Chrome (extension Get cookies.txt LOCALLY)
+- "Video unavailable" hoặc "không khả dụng khu vực" → thử tên bài + "full" hoặc "lyrics"
+- "Requested format is not available" → thử link video dài hơn
 
 Chơi nhạc vui nhé! 🔥""",
         parse_mode='Markdown',
@@ -61,12 +49,11 @@ def help_cmd(message):
 
 /play tên bài hát hoặc link YouTube
 
-Sau khi tìm thấy bài, chọn tốc độ phát bằng nút (1x, 1.15x, 1.25x, 1.5x, 2x).
-
 Nếu lỗi:
-- "Sign in..." → upload cookies.txt mới từ Chrome (extension Get cookies.txt LOCALLY)
-- "Video unavailable" hoặc "không khả dụng khu vực" → thử tên bài + "full" hoặc "lyrics"
-- "Requested format is not available" → thử link video dài hơn hoặc tên khác
+- "Sign in..." → upload cookies.txt mới
+- "Video unavailable" → thử tên bài + "full" hoặc "lyrics":
+  /play Anh nhớ em nhiều lắm remix full
+- "Requested format is not available" → thử link khác hoặc tên bài khác
 
 Thêm bot vào group cũng dùng được!""",
         parse_mode='Markdown'
@@ -90,9 +77,7 @@ def handle_message(message):
         bot.reply_to(message, "❌ Nhập tên bài hát hoặc link YouTube!")
         return
 
-    user_data[message.from_user.id] = {'query': query}
-
-    status = bot.reply_to(message, "🔍 Đang tìm nhạc...")
+    status = bot.reply_to(message, "🔍 Đang tìm + tải nhạc...")
 
     try:
         ydl_opts = {
@@ -135,18 +120,23 @@ def handle_message(message):
                     os.remove(filename)
                 return
 
-        # Lưu dữ liệu để dùng khi chọn speed
-        user_data[message.from_user.id]['filename'] = filename
-        user_data[message.from_user.id]['title'] = title
-        user_data[message.from_user.id]['uploader'] = uploader
-        user_data[message.from_user.id]['duration'] = duration
+        bot.edit_message_text(f"⬇️ Đang gửi: **{title}**...", status.chat.id, status.message_id, parse_mode='Markdown')
 
-        bot.edit_message_text(
-            f"🎵 **Tìm thấy: {title}**\nChọn tốc độ phát:",
-            status.chat.id, status.message_id,
-            parse_mode='Markdown',
-            reply_markup=speed_kb()
-        )
+        with open(filename, 'rb') as audio:
+            bot.send_audio(
+                message.chat.id,
+                audio,
+                caption=f"🎵 **{title}**\n👤 {uploader}\n⏱ {time.strftime('%M:%S', time.gmtime(duration))}",
+                title=title,
+                performer=uploader,
+                parse_mode='Markdown',
+                reply_to_message_id=message.message_id
+            )
+
+        bot.delete_message(status.chat.id, status.message_id)
+
+        if os.path.exists(filename):
+            os.remove(filename)
 
     except Exception as e:
         err = str(e)[:200]
@@ -160,51 +150,5 @@ def handle_message(message):
             msg = f"❌ Lỗi: {err}"
         bot.edit_message_text(msg, status.chat.id, status.message_id)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('speed_'))
-def callback_speed(call):
-    user_id = call.from_user.id
-    if user_id not in user_data or 'filename' not in user_data[user_id]:
-        bot.answer_callback_query(call.id, "Hết hạn, hãy tìm bài mới bằng /play!")
-        return
-
-    speed = float(call.data.split('_')[1])
-    data = user_data[user_id]
-    filename = data['filename']
-    title = data['title']
-    uploader = data['uploader']
-    duration = data['duration']
-
-    bot.answer_callback_query(call.id, f"Đang xử lý ở tốc độ {speed}x...")
-
-    try:
-        temp_dir = tempfile.gettempdir()
-        spedup_filename = os.path.join(temp_dir, f"spedup_{speed}_{os.path.basename(filename)}")
-
-        # FFmpeg tăng tốc độ phát (atempo filter)
-        os.system(f'ffmpeg -y -i "{filename}" -filter:a "atempo={speed}" -vn "{spedup_filename}" -loglevel quiet')
-
-        if not os.path.exists(spedup_filename):
-            raise Exception("Không thể tăng tốc độ file")
-
-        bot.send_audio(
-            call.message.chat.id,
-            open(spedup_filename, 'rb'),
-            caption=f"🎵 **{title}** (tốc độ {speed}x)\n👤 {uploader}\n⏱ {time.strftime('%M:%S', time.gmtime(duration / speed))}",
-            title=f"{title} ({speed}x)",
-            performer=uploader,
-            reply_to_message_id=call.message.message_id
-        )
-
-        os.remove(spedup_filename)
-
-    except Exception as e:
-        bot.send_message(call.message.chat.id, f"❌ Lỗi khi tăng tốc: {str(e)[:200]}")
-
-    finally:
-        if os.path.exists(filename):
-            os.remove(filename)
-        if user_id in user_data:
-            del user_data[user_id]
-
-print("🚀 Bot Nhạc MP3 với nút chọn speed đang chạy...")
+print("🚀 Bot Nhạc MP3 đang chạy...")
 bot.infinity_polling()
