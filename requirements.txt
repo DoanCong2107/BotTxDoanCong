@@ -1,4 +1,5 @@
 pyrogram
 tgcrypto
-pytgcalls==3.0.0  # Phiên bản ổn, hỗ trợ Python 3.10
+py-tgcalls
 yt-dlp
+ntgcalls
