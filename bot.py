@@ -3,12 +3,12 @@ import os
 import time
 from pyrogram import Client, filters
 from pyrogram.types import Message
-from pytgcalls import PyTgCalls
-from pytgcalls.types.input_stream import AudioPiped
-from pytgcalls.types.input_stream.quality import HighQualityAudio
+from py_tgcalls import PyTgCalls  # tên package mới: py_tgcalls
+from py_tgcalls.types.input_stream import AudioPiped
+from py_tgcalls.types.input_stream.quality import HighQualityAudio
 from yt_dlp import YoutubeDL
 
-# Lấy từ Railway Variables
+# Biến môi trường từ Railway
 api_id = int(os.getenv("API_ID"))
 api_hash = os.getenv("API_HASH")
 session_name = "musicbot"
