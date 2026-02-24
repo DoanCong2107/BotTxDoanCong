@@ -1,5 +1,4 @@
 pyrogram
 tgcrypto
-py-tgcalls
+py-tgcalls  # tên package mới, từ PyPI
 yt-dlp
-ntgcalls
