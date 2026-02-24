@@ -1,193 +1,163 @@
 import os
-import random
-import time
 import telebot
+import yt_dlp
+import tempfile
+import time
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 
-TOKEN = os.getenv('TOKEN')
+TOKEN = os.getenv('BOT_TOKEN')
 if not TOKEN:
-    raise ValueError("❌ Chưa set BOT_TOKEN trên Railway! Hãy thêm vào Variables.")
+    raise ValueError("❌ Chưa set BOT_TOKEN trên Railway!")
 
 bot = telebot.TeleBot(TOKEN)
 
-# Balance người chơi (in-memory, reset khi redeploy)
-users = {}
-
-def get_balance(user_id):
-    if user_id not in users:
-        users[user_id] = 100000  # Tặng 100k lần đầu
-    return users[user_id]
-
-def update_balance(user_id, amount):
-    users[user_id] = get_balance(user_id) + amount
-
-# Emoji xúc xắc đẹp
-DICE = [' ', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅']
-
-def roll_dice():
-    dice = [random.randint(1, 6) for _ in range(3)]
-    total = sum(dice)
-    emojis = ''.join(DICE[d] for d in dice)
-    
-    if total == 3 or total == 18:
-        result = "BỘ BA"
-        is_tai = False
-        is_xiu = False
-    elif total >= 11:
-        result = "TÀI"
-        is_tai = True
-        is_xiu = False
-    else:
-        result = "XỈU"
-        is_tai = False
-        is_xiu = True
-    
-    return dice, total, emojis, result, is_tai, is_xiu
-
-# Keyboard
+# Keyboard chính
 def main_kb():
     kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    kb.add(KeyboardButton('💰 Số dư'), KeyboardButton('❓ Hướng dẫn'))
-    kb.add(KeyboardButton('💵 Nạp tiền (100k)'))
+    kb.add(KeyboardButton('🎵 Tìm nhạc'), KeyboardButton('❓ Hướng dẫn'))
     return kb
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    uid = message.from_user.id
     bot.send_message(
         message.chat.id,
-        f"""🎲 **BOT TÀI XỈU RAILWAY** 🎲
+        f"""🎵 **BOT NHẠC RAILWAY** 🎵
 
 👋 Chào {message.from_user.first_name}!
 
-💰 Số dư: **{get_balance(uid):,} VNĐ**
+📌 Gõ lệnh:
+• `/play tên bài hát`   (tìm và tải MP3)
+• `/play link YouTube`
 
-📌 **Cách chơi nhanh:**
-• Gõ: `tài 50000` hoặc `xỉu 100000`
-• Hoặc dùng lệnh `/tai 50000` / `/xiu 100000`
+✅ Bot sẽ tải nhạc chất lượng cao (192kbps) và gửi file audio.
 
-Quy tắc:
-✅ XỈU: tổng 4–10
-✅ TÀI: tổng 11–17
-❌ Bộ ba (3 hoặc 18): Thua hết!
+⚠️ Lưu ý:
+• Chỉ hỗ trợ nhạc công khai (YouTube)
+• File tối đa \~50MB (Telegram giới hạn)
+• Railway có thể hạn chế nếu lạm dụng nhạc bản quyền → dùng có trách nhiệm!
 
-Thắng ăn **1:1** (nhận lại tiền cược + lãi bằng tiền cược)
-
-Chơi vui & thắng lớn nhé! 🍀""",
+Bắt đầu nào! 🔥""",
         parse_mode='Markdown',
         reply_markup=main_kb()
     )
 
 @bot.message_handler(commands=['help'])
 def help_cmd(message):
-    bot.reply_to(message, """🎲 **HƯỚNG DẪN CHI TIẾT**
+    bot.reply_to(message, """🎵 **HƯỚNG DẪN SỬ DỤNG**
 
-✅ Cược Tài/Xỉu:
-• `tài 50000`
-• `xỉu 200000`
-• `/tai 100000`
-• `/xiu 50000`
+✅ Tìm và tải nhạc:
+• `/play shape of you`
+• `/play https://youtu.be/...`
 
 📊 Lệnh khác:
-• `/so_du` hoặc bấm 💰 Số dư
-• `/nap` hoặc bấm 💵 Nạp tiền (100k)
 • `/start` - Menu chính
+• Bấm nút **🎵 Tìm nhạc** hoặc **❓ Hướng dẫn**
 
-⚠️ Lưu ý:
-• Tiền chỉ lưu trong phiên (reset khi redeploy)
-• Nhà cái ăn bộ ba (3 & 18)
+💡 Mẹo:
+• Gõ tên bài hát càng chính xác càng tốt
+• Hỗ trợ cả link YouTube Shorts
 
-Chúc bạn đỏ tay! 🔥""", parse_mode='Markdown')
+Chơi nhạc vui vẻ! 🎧""", parse_mode='Markdown')
 
-@bot.message_handler(commands=['so_du', 'balance'])
-def so_du(message):
-    uid = message.from_user.id
-    bot.reply_to(message, f"💰 **Số dư hiện tại:** {get_balance(uid):,} VNĐ")
-
-@bot.message_handler(commands=['nap'])
-def nap_tien(message):
-    uid = message.from_user.id
-    update_balance(uid, 100000)
-    bot.reply_to(message, f"✅ Đã nạp **100.000 VNĐ**!\n💰 Số dư mới: **{get_balance(uid):,} VNĐ**")
-
-# Xử lý cược (cả lệnh và tin nhắn thường)
 @bot.message_handler(func=lambda m: True)
 def handle_message(message):
+    text = message.text.strip()
     uid = message.from_user.id
-    text = message.text.strip().lower()
-    
-    # Nạp tiền từ nút
-    if text == '💵 nạp tiền (100k)':
-        update_balance(uid, 100000)
-        bot.reply_to(message, f"✅ Nạp thành công **100.000 VNĐ**!\n💰 Số dư: **{get_balance(uid):,} VNĐ**")
+
+    if text == '🎵 tìm nhạc' or text == '🎵 Tìm nhạc':
+        bot.reply_to(message, "Gõ lệnh `/play tên bài hát` nhé!")
         return
-    
-    if text == '💰 số dư':
-        bot.reply_to(message, f"💰 **Số dư:** {get_balance(uid):,} VNĐ")
-        return
-    
-    if text == '❓ hướng dẫn':
+
+    if text == '❓ hướng dẫn' or text == '❓ Hướng dẫn':
         help_cmd(message)
         return
 
-    # Xử lý cược
-    bet_type = None
-    amount = None
-    
-    if text.startswith('tài ') or text.startswith('/tai '):
-        bet_type = 'tai'
-        try:
-            amount = int(text.split()[1])
-        except:
-            pass
-    elif text.startswith('xỉu ') or text.startswith('xiu ') or text.startswith('/xiu ') or text.startswith('/xỉu '):
-        bet_type = 'xiu'
-        try:
-            amount = int(text.split()[1])
-        except:
-            pass
-    
-    if not bet_type or not amount or amount <= 0:
-        if any(k in text for k in ['tài', 'tai', 'xỉu', 'xiu']):
-            bot.reply_to(message, "❌ Sai cú pháp!\n✅ Ví dụ đúng: `tài 50000` hoặc `/xiu 100000`")
+    if not text.lower().startswith(('/play ', 'play ')):
+        if any(x in text.lower() for x in ['play', 'nhạc', 'music', 'bài']):
+            bot.reply_to(message, "✅ Dùng lệnh: `/play tên bài hát` hoặc `/play link`")
         return
 
-    balance = get_balance(uid)
-    if amount > balance:
-        bot.reply_to(message, f"❌ Không đủ tiền! Bạn chỉ có **{balance:,} VNĐ**")
+    # Xử lý /play
+    query = text.split(maxsplit=1)[1] if len(text.split()) > 1 else ""
+    if not query:
+        bot.reply_to(message, "❌ Vui lòng nhập tên bài hát hoặc link!\nVí dụ: `/play em của ngày hôm qua`")
         return
 
-    # Trừ tiền cược ngay
-    update_balance(uid, -amount)
-    
-    # Lắc
-    msg = bot.reply_to(message, "🎲 **Đang lắc xúc xắc...**")
-    time.sleep(1.8)  # Tạo cảm giác thật
+    status_msg = bot.reply_to(message, "🔍 Đang tìm kiếm...")
 
-    dice, total, emojis, result, is_tai, is_xiu = roll_dice()
-    
-    win = (bet_type == 'tai' and is_tai) or (bet_type == 'xiu' and is_xiu)
-    
-    if win:
-        profit = amount * 2  # Trả lại gốc + lãi
-        update_balance(uid, amount)  # + gốc + lãi = +amount lần nữa
-        outcome = f"🎉 **THẮNG RỒI!** +{amount:,} VNĐ"
-    else:
-        outcome = f"😢 **THUA** -{amount:,} VNĐ"
-    
-    final_balance = get_balance(uid)
-    
-    result_text = f"""🎲 **KẾT QUẢ**
+    try:
+        # Tìm kiếm hoặc lấy link
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'default_search': 'ytsearch',
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': False,
+            'outtmpl': os.path.join(tempfile.gettempdir(), '%(title)s.%(ext)s'),
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+            'noplaylist': True,   # chỉ lấy video đầu tiên
+        }
 
-{emojis[0]} {emojis[1]} {emojis[2]}
-**Tổng điểm = {total} → {result}**
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(query, download=True)
+            if 'entries' in info:  # là kết quả tìm kiếm
+                info = info['entries'][0]
 
-Bạn cược **{bet_type.upper()}** {amount:,} VNĐ
-{outcome}
+            title = info.get('title', 'Unknown')
+            duration = info.get('duration', 0)
+            uploader = info.get('uploader', 'Unknown')
 
-💰 Số dư mới: **{final_balance:,} VNĐ**"""
+            # Đường dẫn file mp3
+            filename = ydl.prepare_filename(info)
+            if not filename.endswith('.mp3'):
+                filename = filename.rsplit('.', 1)[0] + '.mp3'
 
-    bot.edit_message_text(result_text, msg.chat.id, msg.message_id, parse_mode='Markdown')
+            if duration > 1800:  # >30 phút
+                bot.edit_message_text("❌ Bài quá dài (>30 phút), không hỗ trợ!", status_msg.chat.id, status_msg.message_id)
+                if os.path.exists(filename):
+                    os.remove(filename)
+                return
 
-print("🚀 Bot Tài Xỉu đang chạy trên Railway...")
+        # Đang tải
+        bot.edit_message_text(f"⬇️ Đang tải: **{title}**...", status_msg.chat.id, status_msg.message_id, parse_mode='Markdown')
+
+        # Gửi file audio
+        with open(filename, 'rb') as audio:
+            bot.send_audio(
+                message.chat.id,
+                audio,
+                caption=f"🎵 **{title}**\n👤 {uploader}\n⏱ {time.strftime('%M:%S', time.gmtime(duration))}",
+                title=title,
+                performer=uploader,
+                parse_mode='Markdown',
+                reply_to_message_id=message.message_id
+            )
+
+        bot.delete_message(status_msg.chat.id, status_msg.message_id)
+
+        # Xóa file sau khi gửi
+        if os.path.exists(filename):
+            os.remove(filename)
+
+    except Exception as e:
+        error_msg = str(e)
+        if "Private video" in error_msg or "Video unavailable" in error_msg:
+            txt = "❌ Video riêng tư hoặc không tồn tại!"
+        elif "Unable to extract" in error_msg:
+            txt = "❌ Không tìm thấy bài hát, thử tên khác nhé!"
+        else:
+            txt = f"❌ Lỗi: {error_msg[:200]}"
+        
+        bot.edit_message_text(txt, status_msg.chat.id, status_msg.message_id)
+        # Xóa file nếu có
+        for f in os.listdir(tempfile.gettempdir()):
+            if f.endswith('.mp3') and 'temp' in f.lower():
+                try: os.remove(os.path.join(tempfile.gettempdir(), f))
+                except: pass
+
+print("🚀 Bot Nhạc đang chạy trên Railway...")
 bot.infinity_polling()
