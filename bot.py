@@ -11,6 +11,8 @@ if not TOKEN:
 
 bot = telebot.TeleBot(TOKEN)
 
+SPEED = 1.15  # Lock tốc độ ở 1.15x
+
 def main_kb():
     kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     kb.add(KeyboardButton('🎵 Tìm nhạc'), KeyboardButton('❓ Hướng dẫn'))
@@ -20,9 +22,11 @@ def main_kb():
 def start(message):
     bot.send_message(
         message.chat.id,
-        f"""🎵 **BOT TẢI NHẠC MP3** (YouTube → MP3)
+        f"""🎵 **BOT NHẠC MP3 TỰ ĐỘNG 1.15x**
 
 Chào {message.from_user.first_name}!
+
+Tất cả bài hát sẽ tự động được tăng tốc độ phát lên **1.15x** (nhạc nhanh hơn 15%) mà không cần chọn.
 
 📌 Gõ lệnh:
 /play tên bài hát
@@ -30,12 +34,6 @@ Chào {message.from_user.first_name}!
 
 Ví dụ:
 /play Anh nhớ em nhiều lắm remix
-/play https://youtu.be/...
-
-✅ Chất lượng cao nhất có thể (192kbps+)
-⚠️ File max \~50MB (giới hạn Telegram)
-⚠️ Nếu lỗi "Sign in to confirm you're not a bot" → upload cookies.txt mới
-⚠️ Nếu lỗi "không hỗ trợ audio chất lượng cao" → thử link khác hoặc tên bài dài hơn
 
 Chơi nhạc vui nhé! 🔥""",
         parse_mode='Markdown',
@@ -45,19 +43,18 @@ Chơi nhạc vui nhé! 🔥""",
 @bot.message_handler(commands=['help'])
 def help_cmd(message):
     bot.reply_to(message,
-        """🎵 **HƯỚNG DẪN CHI TIẾT**
+        """🎵 **HƯỚNG DẪN**
 
 /play tên bài hát hoặc link YouTube
-/play Anh nhớ em nhiều lắm remix bản dài
+
+Tất cả nhạc sẽ tự động phát ở tốc độ **1.15x** (nhanh hơn 15%).
 
 Nếu lỗi:
-- "Sign in..." → Lấy cookies.txt mới từ Chrome (extension Get cookies.txt LOCALLY) → upload lên Railway
-- "Không hỗ trợ audio chất lượng cao" → Video không có audio riêng, thử link video dài hơn (không phải Short)
-- "Video unavailable" → Video bị chặn khu vực hoặc private, thử bài khác
+- "Sign in..." → upload cookies.txt mới từ Chrome (extension Get cookies.txt LOCALLY)
+- "Không hỗ trợ audio..." → thử link dài hơn
+- "Video unavailable" → video bị chặn, thử bài khác
 
-Thêm bot vào group cũng dùng được!
-
-Chúc nghe nhạc vui! 🎧""",
+Thêm bot vào group cũng dùng được!""",
         parse_mode='Markdown'
     )
 
@@ -79,11 +76,11 @@ def handle_message(message):
         bot.reply_to(message, "❌ Nhập tên bài hát hoặc link YouTube!")
         return
 
-    status = bot.reply_to(message, "🔍 Đang tìm + tải nhạc...")
+    status = bot.reply_to(message, f"🔍 Đang tìm + xử lý nhạc ở tốc độ {SPEED}x...")
 
     try:
         ydl_opts = {
-            'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best[height<=480]/best',
+            'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
             'default_search': 'ytsearch',
             'quiet': True,
             'no_warnings': True,
@@ -96,19 +93,13 @@ def handle_message(message):
             }],
             'noplaylist': True,
             'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8'
-            },
-            'geo_bypass': True,
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(query, download=True)
             if 'entries' in info:
                 if not info['entries']:
-                    raise Exception("Không tìm thấy bài hát nào!")
+                    raise Exception("Không tìm thấy bài hát!")
                 info = info['entries'][0]
 
             title = info.get('title', 'Unknown')
@@ -125,35 +116,45 @@ def handle_message(message):
                     os.remove(filename)
                 return
 
-        bot.edit_message_text(f"⬇️ Đang gửi file: **{title}**...", status.chat.id, status.message_id, parse_mode='Markdown')
+        # Tạo file mới với tốc độ 1.15x
+        temp_dir = tempfile.gettempdir()
+        spedup_filename = os.path.join(temp_dir, f"spedup_{SPEED}_{os.path.basename(filename)}")
 
-        with open(filename, 'rb') as audio:
+        # FFmpeg tăng tốc độ phát (atempo filter)
+        os.system(f'ffmpeg -y -i "{filename}" -filter:a "atempo={SPEED}" -vn "{spedup_filename}" -loglevel quiet')
+
+        if not os.path.exists(spedup_filename):
+            raise Exception("Không thể tăng tốc độ file")
+
+        bot.edit_message_text(f"⬇️ Đang gửi file ở tốc độ {SPEED}x: **{title}**...", status.chat.id, status.message_id, parse_mode='Markdown')
+
+        with open(spedup_filename, 'rb') as audio:
             bot.send_audio(
                 message.chat.id,
                 audio,
-                caption=f"🎵 **{title}**\n👤 {uploader}\n⏱ {time.strftime('%M:%S', time.gmtime(duration))}",
-                title=title,
+                caption=f"🎵 **{title}** (tốc độ {SPEED}x)\n👤 {uploader}\n⏱ {time.strftime('%M:%S', time.gmtime(duration / SPEED))}",
+                title=f"{title} ({SPEED}x)",
                 performer=uploader,
-                parse_mode='Markdown',
                 reply_to_message_id=message.message_id
             )
 
         bot.delete_message(status.chat.id, status.message_id)
 
-        if os.path.exists(filename):
-            os.remove(filename)
+        # Xóa file tạm
+        os.remove(filename)
+        os.remove(spedup_filename)
 
     except Exception as e:
         err = str(e)[:200]
         if "Sign in" in err or "confirm you're not a bot" in err:
-            msg = "❌ Lỗi YouTube: cần cookies.txt mới. Lấy từ Chrome (extension Get cookies.txt LOCALLY) → upload lại!"
+            msg = "❌ Lỗi YouTube: cần cookies.txt mới. Lấy từ Chrome và upload lại!"
         elif "unavailable" in err or "not available" in err:
             msg = "❌ Video không khả dụng hoặc bị chặn khu vực. Thử tên/link khác!"
-        elif "format" in err or "not available" in err or "audio" in err:
-            msg = "❌ Video không hỗ trợ audio chất lượng cao (có thể là Short/remix). Thử link video dài hơn hoặc tên bài khác!"
+        elif "format" in err or "not available" in err:
+            msg = "❌ Video không hỗ trợ audio chất lượng cao. Thử link video dài hơn!"
         else:
             msg = f"❌ Lỗi: {err}"
         bot.edit_message_text(msg, status.chat.id, status.message_id)
 
-print("🚀 Bot Nhạc MP3 đang chạy...")
+print("🚀 Bot Nhạc MP3 tự động 1.15x đang chạy...")
 bot.infinity_polling()
