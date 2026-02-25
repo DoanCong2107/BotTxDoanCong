@@ -186,12 +186,12 @@ def handle_message(message):
 
     except Exception as e:
         err = str(e)[:250]
-        if "format is not available" in err:
-            msg = "❌ Vẫn không tải được (hiếm). Thử link video dài hơn hoặc tên bài khác!"
-        elif "Sign in" in err or "confirm you're not a bot" in err:
-            msg = "❌ Lỗi YouTube: cần cookies.txt mới!"
+        if "sign in" in err.lower() or "bot" in err.lower():
+            msg = "❌ Lỗi YouTube: cần cookies.txt mới! Export từ Chrome VN, upload lại Railway rồi redeploy."
+        elif "format is not available" in err:
+            msg = "❌ Video không hỗ trợ audio chất lượng cao. Thử link video dài hơn!"
         elif "unavailable" in err or "not available" in err:
-            msg = "❌ Video không khả dụng hoặc bị chặn khu vực!"
+            msg = "❌ Video không khả dụng hoặc bị chặn khu vực. Thử tên/link khác!"
         elif "ffmpeg" in err:
             msg = "❌ Lỗi tăng tốc ffmpeg. Redeploy lại!"
         else:
