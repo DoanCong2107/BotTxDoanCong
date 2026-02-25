@@ -42,7 +42,7 @@ Chào {message.from_user.first_name}!
 /play link YouTube
 
 ✅ Tự động tăng tốc {SPEED_TEXT} (giữ nguyên cao độ giọng nói)
-✅ Chất lượng cao nhất 192kbps
+✅ Chất lượng audio gì cũng được (128kbps, đủ nghe)
 ⚠️ File tối đa \~50MB (giới hạn Telegram)
 ⚠️ Nếu lỗi Sign in → upload cookies.txt mới
 
@@ -61,13 +61,13 @@ def help_cmd(message):
 /play Anh nhớ em nhiều lắm remix
 /play https://youtu.be/...
 
-✅ Tăng tốc {SPEED_TEXT} bằng ffmpeg atempo
-✅ Hỗ trợ tốt nhạc Việt, remix DJ, Long Nhật...
+✅ Tăng tốc {SPEED_TEXT} bằng ffmpeg
+✅ Hỗ trợ TẤT CẢ nhạc Việt (kể cả remix ngắn, Short, DJ)
 
 Lỗi thường gặp:
-• "Video không hỗ trợ audio chất lượng cao" → thử link video dài hơn
-• "Sign in to confirm you're not a bot" → upload cookies.txt mới từ Chrome
-• "Video không khả dụng" → thử tên bài khác hoặc cập nhật cookies
+• "không hỗ trợ audio" → giờ đã fix, thử lại!
+• "Sign in to confirm..." → upload cookies.txt mới
+• "Video không khả dụng" → thử tên bài khác
 
 Thêm bot vào group cũng dùng được!
 
@@ -107,9 +107,9 @@ def handle_message(message):
     spedup_mp3 = os.path.join(temp_dir, f"sped_{int(time.time())}.mp3")
 
     try:
-        # Cấu hình yt-dlp (đã fix format cho nhạc Việt remix)
+        # Cấu hình yt-dlp - ĐÃ CHỈNH CHO CHẤT LƯỢNG GÌ CŨNG ĐƯỢC
         ydl_opts = {
-            'format': 'bestaudio/best',
+            'format': 'best',                     # ← DÒNG QUAN TRỌNG: lấy bất kỳ format nào có audio
             'default_search': 'ytsearch',
             'quiet': True,
             'no_warnings': True,
@@ -118,7 +118,7 @@ def handle_message(message):
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
-                'preferredquality': '192',
+                'preferredquality': '128',        # ← Hạ xuống 128kbps để dễ tải hơn, vẫn nghe tốt
             }],
             'noplaylist': True,
             'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
@@ -149,7 +149,7 @@ def handle_message(message):
         bot.edit_message_text(f"⚡ Đang tăng tốc {SPEED_TEXT} + gửi file: **{title}**...", 
                               status.chat.id, status.message_id, parse_mode='Markdown')
 
-        # Kiểm tra ffmpeg có tồn tại không
+        # Kiểm tra ffmpeg
         if not shutil.which("ffmpeg"):
             raise Exception("❌ FFmpeg NOT found in PATH!")
 
@@ -157,17 +157,17 @@ def handle_message(message):
         ffmpeg_cmd = [
             "ffmpeg", "-y", "-i", original_mp3,
             "-filter:a", f"atempo={SPEED_FACTOR}",
-            "-b:a", "192k",
+            "-b:a", "128k",                       # ← Hạ bitrate để file nhẹ
             spedup_mp3
         ]
         result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
         if result.returncode != 0:
             raise Exception(f"ffmpeg lỗi: {result.stderr[:150]}")
 
-        # Tính thời lượng mới sau tăng tốc
+        # Tính thời lượng mới
         new_duration = int(duration / SPEED_FACTOR)
 
-        # Gửi file đã tăng tốc
+        # Gửi file
         bot.edit_message_text(f"⬇️ Đang gửi file tăng tốc {SPEED_TEXT}: **{title}**...", 
                               status.chat.id, status.message_id, parse_mode='Markdown')
 
@@ -182,13 +182,12 @@ def handle_message(message):
                 reply_to_message_id=message.message_id
             )
 
-        # Xóa thông báo đang xử lý
         bot.delete_message(status.chat.id, status.message_id)
 
     except Exception as e:
         err = str(e)[:250]
         if "format is not available" in err:
-            msg = "❌ Video không hỗ trợ audio chất lượng cao (thường là remix ngắn/Short). Thử link video dài hơn!"
+            msg = "❌ Vẫn không tải được (hiếm). Thử link video dài hơn hoặc tên bài khác!"
         elif "Sign in" in err or "confirm you're not a bot" in err:
             msg = "❌ Lỗi YouTube: cần cookies.txt mới!"
         elif "unavailable" in err or "not available" in err:
@@ -200,7 +199,7 @@ def handle_message(message):
         bot.edit_message_text(msg, status.chat.id, status.message_id)
 
     finally:
-        # Xóa file tạm (dù thành công hay lỗi)
+        # Xóa file tạm
         for f in [original_mp3, spedup_mp3]:
             if os.path.exists(f):
                 try:
