@@ -42,9 +42,9 @@ Chào {message.from_user.first_name}!
 /play link YouTube
 
 ✅ Tự động tăng tốc {SPEED_TEXT} (giữ nguyên cao độ giọng nói)
-✅ Chất lượng audio gì cũng được (128kbps, đủ nghe)
+✅ Chất lượng audio gì cũng được (bitrate thấp nhất có)
 ⚠️ File tối đa \~50MB (giới hạn Telegram)
-⚠️ Nếu lỗi Sign in → upload cookies.txt mới
+⚠️ Nếu lỗi Sign in → upload cookies.txt mới từ Cốc Cốc
 
 Chơi nhạc vui nhé! 🔥""",
         parse_mode='Markdown',
@@ -65,8 +65,8 @@ def help_cmd(message):
 ✅ Hỗ trợ TẤT CẢ nhạc Việt (kể cả remix ngắn, Short, DJ)
 
 Lỗi thường gặp:
-• "không hỗ trợ audio" → giờ đã fix, thử lại!
-• "Sign in to confirm..." → upload cookies.txt mới
+• "format not available" → đã fix fallback bitrate thấp nhất
+• "Sign in to confirm..." → upload cookies.txt mới từ Cốc Cốc/Chrome VN
 • "Video không khả dụng" → thử tên bài khác
 
 Thêm bot vào group cũng dùng được!
@@ -107,9 +107,9 @@ def handle_message(message):
     spedup_mp3 = os.path.join(temp_dir, f"sped_{int(time.time())}.mp3")
 
     try:
-        # Cấu hình yt-dlp - ĐÃ CHỈNH CHO CHẤT LƯỢNG GÌ CŨNG ĐƯỢC
+        # Cấu hình yt-dlp - ĐÃ CHỈNH Fallback bitrate thấp nhất
         ydl_opts = {
-            'format': 'best',                     # ← DÒNG QUAN TRỌNG: lấy bất kỳ format nào có audio
+            'format': 'ba/best',                  # ba = bestaudio, fallback best nếu không có audio riêng
             'default_search': 'ytsearch',
             'quiet': True,
             'no_warnings': True,
@@ -118,7 +118,7 @@ def handle_message(message):
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
-                'preferredquality': '128',        # ← Hạ xuống 128kbps để dễ tải hơn, vẫn nghe tốt
+                'preferredquality': '0',          # 0 = lấy bitrate thấp nhất có (fallback tự động nếu không 192kbps)
             }],
             'noplaylist': True,
             'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
@@ -128,6 +128,7 @@ def handle_message(message):
                 'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8'
             },
             'geo_bypass': True,
+            'ignoreerrors': True,                 # Bỏ qua lỗi format nhỏ, thử fallback
         }
 
         # Tải nhạc
@@ -157,7 +158,7 @@ def handle_message(message):
         ffmpeg_cmd = [
             "ffmpeg", "-y", "-i", original_mp3,
             "-filter:a", f"atempo={SPEED_FACTOR}",
-            "-b:a", "128k",                       # ← Hạ bitrate để file nhẹ
+            "-b:a", "64k",                        # Hạ xuống thấp nhất để fallback tốt, file nhẹ
             spedup_mp3
         ]
         result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
@@ -186,12 +187,12 @@ def handle_message(message):
 
     except Exception as e:
         err = str(e)[:250]
-        if "sign in" in err.lower() or "bot" in err.lower():
-            msg = "❌ Lỗi YouTube: cần cookies.txt mới! Export từ Chrome VN, upload lại Railway rồi redeploy."
-        elif "format is not available" in err:
-            msg = "❌ Video không hỗ trợ audio chất lượng cao. Thử link video dài hơn!"
+        if "format is not available" in err or "not available" in err:
+            msg = "❌ Video không có audio stream phù hợp. Thử link khác hoặc upload cookies.txt mới từ Cốc Cốc!"
+        elif "Sign in" in err or "confirm you're not a bot" in err:
+            msg = "❌ Lỗi YouTube: cần cookies.txt mới! Export từ Cốc Cốc/Chrome VN upload Railway."
         elif "unavailable" in err or "not available" in err:
-            msg = "❌ Video không khả dụng hoặc bị chặn khu vực. Thử tên/link khác!"
+            msg = "❌ Video không khả dụng hoặc bị chặn khu vực!"
         elif "ffmpeg" in err:
             msg = "❌ Lỗi tăng tốc ffmpeg. Redeploy lại!"
         else:
