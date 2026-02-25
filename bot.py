@@ -11,7 +11,6 @@ if not TOKEN:
 
 bot = telebot.TeleBot(TOKEN)
 
-# Hàm tạo bàn phím chính
 def main_kb():
     kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     kb.add(KeyboardButton('🎵 Tìm nhạc'), KeyboardButton('❓ Hướng dẫn'))
@@ -21,100 +20,119 @@ def main_kb():
 def start(message):
     bot.send_message(
         message.chat.id,
-        f"Chào {message.from_user.first_name}! Gửi /play + tên bài hát để tải nhạc nhé.",
+        f"""🎵 **BOT TẢI NHẠC MP3 (1.15x Speed)**
+
+Chào {message.from_user.first_name}!
+Tất cả nhạc tải về sẽ tự động được tăng tốc lên **1.15x**.
+
+📌 Gõ lệnh:
+/play tên bài hát
+/play link YouTube""",
+        parse_mode='Markdown',
         reply_markup=main_kb()
     )
 
 @bot.message_handler(commands=['help'])
 def help_cmd(message):
-    help_text = "📌 **Hướng dẫn:**\n/play [tên bài hát]\n/play [link youtube]\n\nVí dụ: `/play Chạy ngay đi`"
-    bot.send_message(message.chat.id, help_text, parse_mode='Markdown')
+    bot.reply_to(message,
+        """🎵 **HƯỚNG DẪN**
+/play tên bài hát hoặc link YouTube
+Hệ thống tự động apply filter `atempo=1.15`.""",
+        parse_mode='Markdown'
+    )
 
-# Sử dụng command handler thay vì lọc text thủ công
-@bot.message_handler(commands=['play'])
-def play_handler(message):
-    # Lấy phần nội dung sau lệnh /play
-    query = message.text.split(maxsplit=1)[1] if len(message.text.split()) > 1 else ""
-    
-    if not query:
-        bot.reply_to(message, "❌ Vui lòng nhập tên bài hát! (VD: /play Em của ngày hôm qua)")
+@bot.message_handler(func=lambda m: True)
+def handle_message(message):
+    text = message.text.strip()
+    if text in ['🎵 tìm nhạc', 'tìm nhạc']:
+        bot.reply_to(message, "Gõ /play tên bài hát hoặc link nhé!")
+        return
+    if text in ['❓ hướng dẫn', 'hướng dẫn']:
+        help_cmd(message)
         return
 
-    status = bot.reply_to(message, "🔍 Đang xử lý... (Vui lòng đợi 10-30s)")
+    if not text.lower().startswith(('/play ', 'play ')):
+        return
 
-    # Tạo thư mục tạm an toàn
-    tmp_dir = tempfile.gettempdir()
-    
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'default_search': 'ytsearch1', # Tìm 1 kết quả duy nhất nếu là text
-        'quiet': True,
-        'no_warnings': True,
-        'outtmpl': os.path.join(tmp_dir, '%(id)s.%(ext)s'), # Dùng ID để tránh lỗi ký tự đặc biệt ở tên file
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-        # Fix lỗi YouTube chặn bot
-        'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    }
+    query = text.split(maxsplit=1)[1] if len(text.split()) > 1 else ""
+    if not query:
+        bot.reply_to(message, "❌ Nhập tên bài hát hoặc link YouTube!")
+        return
+
+    status = bot.reply_to(message, "🔍 Đang tìm + xử lý nhạc 1.15x...")
 
     try:
+        ydl_opts = {
+            'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best[height<=480]/best',
+            'default_search': 'ytsearch',
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': False,
+            'outtmpl': os.path.join(tempfile.gettempdir(), '%(title)s.%(ext)s'),
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+            # --- ĐOẠN THÊM VÀO ĐỂ TĂNG TỐC 1.15x ---
+            'postprocessor_args': [
+                '-filter:a', 'atempo=1.15'
+            ],
+            # --------------------------------------
+            'noplaylist': True,
+            'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8'
+            },
+            'geo_bypass': True,
+        }
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Trích xuất thông tin
             info = ydl.extract_info(query, download=True)
-            
-            # Nếu tìm kiếm bằng từ khóa, lấy phần tử đầu tiên
             if 'entries' in info:
-                video_info = info['entries'][0]
-            else:
-                video_info = info
+                if not info['entries']:
+                    raise Exception("Không tìm thấy bài hát nào!")
+                info = info['entries'][0]
 
-            title = video_info.get('title', 'Music')
-            file_id = video_info.get('id')
-            duration = video_info.get('duration', 0)
-            uploader = video_info.get('uploader', 'Unknown')
-            # Đường dẫn file sau khi convert (luôn là .mp3 do postprocessor)
-            expected_filename = os.path.join(tmp_dir, f"{file_id}.mp3")
+            title = info.get('title', 'Unknown')
+            duration = info.get('duration', 0)
+            # Tính toán lại thời gian hiển thị (chia cho 1.15)
+            new_duration = int(duration / 1.15)
+            uploader = info.get('uploader', 'Unknown')
 
-            if duration > 1200: # Giới hạn 20 phút để tránh quá tải
-                bot.edit_message_text("❌ Video quá dài (giới hạn 20p).", status.chat.id, status.message_id)
-                if os.path.exists(expected_filename): os.remove(expected_filename)
+            filename = ydl.prepare_filename(info)
+            if not filename.endswith('.mp3'):
+                filename = filename.rsplit('.', 1)[0] + '.mp3'
+
+            if duration > 1800:
+                bot.edit_message_text("❌ Bài quá dài (>30 phút)", status.chat.id, status.message_id)
+                if os.path.exists(filename):
+                    os.remove(filename)
                 return
 
-            # Gửi file
-            bot.edit_message_text(f"📤 Đang tải lên: {title}", status.chat.id, status.message_id)
-            
-            with open(expected_filename, 'rb') as audio:
-                bot.send_audio(
-                    message.chat.id,
-                    audio,
-                    caption=f"🎵 {title}\n👤 {uploader}",
-                    title=title,
-                    performer=uploader,
-                    reply_to_message_id=message.message_id
-                )
+        bot.edit_message_text(f"⬇️ Đang gửi file (Speed 1.15x): **{title}**...", status.chat.id, status.message_id, parse_mode='Markdown')
 
-            bot.delete_message(status.chat.id, status.message_id)
-            
-            # Dọn dẹp file
-            if os.path.exists(expected_filename):
-                os.remove(expected_filename)
+        with open(filename, 'rb') as audio:
+            bot.send_audio(
+                message.chat.id,
+                audio,
+                caption=f"🎵 **{title} (1.15x)**\n👤 {uploader}\n⏱ {time.strftime('%M:%S', time.gmtime(new_duration))}",
+                title=f"{title} (1.15x)",
+                performer=uploader,
+                parse_mode='Markdown',
+                reply_to_message_id=message.message_id
+            )
+
+        bot.delete_message(status.chat.id, status.message_id)
+
+        if os.path.exists(filename):
+            os.remove(filename)
 
     except Exception as e:
-        error_msg = str(e)
-        print(f"Error: {error_msg}")
-        bot.edit_message_text(f"❌ Có lỗi xảy ra: {error_msg[:100]}...", status.chat.id, status.message_id)
+        err = str(e)[:200]
+        bot.edit_message_text(f"❌ Lỗi: {err}", status.chat.id, status.message_id)
 
-# Xử lý nút bấm từ bàn phím
-@bot.message_handler(func=lambda m: True)
-def text_handler(message):
-    if "tìm nhạc" in message.text.lower():
-        bot.reply_to(message, "Hãy dùng lệnh: `/play + tên bài hát`", parse_mode='Markdown')
-    elif "hướng dẫn" in message.text.lower():
-        help_cmd(message)
-
-print("🚀 Bot is running...")
+print("🚀 Bot Nhạc MP3 (1.15x) đang chạy...")
 bot.infinity_polling()
