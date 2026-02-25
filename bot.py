@@ -25,9 +25,12 @@ def start(message):
 Chào {message.from_user.first_name}!
 Tất cả nhạc sẽ tự động được tăng tốc lên **1.15x**.
 
-📌 Cách dùng:
+📌 Gõ lệnh:
 /play tên bài hát
-/play link YouTube""",
+/play link YouTube
+
+Ví dụ:
+/play Anh nhớ em nhiều lắm remix""",
         parse_mode='Markdown',
         reply_markup=main_kb()
     )
@@ -35,10 +38,16 @@ Tất cả nhạc sẽ tự động được tăng tốc lên **1.15x**.
 @bot.message_handler(commands=['help'])
 def help_cmd(message):
     bot.reply_to(message,
-        """🎵 **HƯỚNG DẪN**
-- Dùng `/play` kèm tên bài hoặc link.
-- Nếu lỗi: Đảm bảo server đã cài FFmpeg.
-- Tốc độ mặc định: 1.15x (vừa đủ hay, không méo giọng).""",
+        """🎵 **HƯỚNG DẪN CHI TIẾT**
+
+/play tên bài hát hoặc link YouTube
+Hệ thống tự động apply filter `atempo=1.15`.
+
+Nếu lỗi:
+- Cần file `nixpacks.toml` trên Railway để chạy FFmpeg.
+- "Sign in..." → Cập nhật cookies.txt mới.
+
+Chúc nghe nhạc vui! 🎧""",
         parse_mode='Markdown'
     )
 
@@ -46,7 +55,7 @@ def help_cmd(message):
 def handle_message(message):
     text = message.text.strip()
     if text.lower() in ['🎵 tìm nhạc', 'tìm nhạc']:
-        bot.reply_to(message, "Gõ /play + tên bài hát nhé!")
+        bot.reply_to(message, "Gõ /play tên bài hát hoặc link nhé!")
         return
     if text.lower() in ['❓ hướng dẫn', 'hướng dẫn']:
         help_cmd(message)
@@ -60,24 +69,24 @@ def handle_message(message):
         bot.reply_to(message, "❌ Nhập tên bài hát hoặc link YouTube!")
         return
 
-    status = bot.reply_to(message, "🔍 Đang xử lý 1.15x (Vui lòng đợi)...")
+    status = bot.reply_to(message, "🔍 Đang tìm + tải nhạc (Speed 1.15x)...")
 
     try:
-        # Cấu hình yt-dlp tối ưu
+        # Cấu hình tối ưu để tránh lỗi format và lỗi xử lý file trên Railway
         ydl_opts = {
-            # Chọn audio tốt nhất bất kể định dạng nào để tránh lỗi "format not available"
-            'format': 'bestaudio/best',
+            'format': 'bestaudio/best', # Lấy audio tốt nhất sẵn có
             'default_search': 'ytsearch1',
             'quiet': True,
             'no_warnings': True,
-            # Lưu file bằng ID để tránh lỗi ký tự đặc biệt trong tên file
-            'outtmpl': '%(id)s.%(ext)s',
+            'extract_flat': False,
+            # Lưu bằng ID để FFmpeg xử lý không bị lỗi ký tự đặc biệt
+            'outtmpl': 'track_%(id)s.%(ext)s', 
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
-            # Tăng tốc 1.15x bằng FFmpeg
+            # TĂNG TỐC 1.15x
             'postprocessor_args': [
                 '-filter:a', 'atempo=1.15'
             ],
@@ -93,26 +102,27 @@ def handle_message(message):
 
             title = info.get('title', 'Unknown')
             duration = info.get('duration', 0)
-            new_duration = int(duration / 1.15)
+            new_duration = int(duration / 1.15) # Thời lượng thực tế sau khi tăng tốc
             uploader = info.get('uploader', 'Unknown')
-            
-            # File sau khi xử lý xong sẽ có đuôi .mp3
-            filename = f"{info['id']}.mp3"
+
+            # Xác định tên file sau khi FFmpeg đã convert sang mp3
+            filename = f"track_{info['id']}.mp3"
 
             if duration > 2400: # Giới hạn 40 phút
-                bot.edit_message_text("❌ Video quá dài!", status.chat.id, status.message_id)
+                bot.edit_message_text("❌ Bài quá dài (>40 phút)", status.chat.id, status.message_id)
                 if os.path.exists(filename): os.remove(filename)
                 return
 
-        bot.edit_message_text(f"📤 Đang gửi: **{title}**", status.chat.id, status.message_id, parse_mode='Markdown')
+        bot.edit_message_text(f"⬇️ Đang gửi file: **{title}** (1.15x)...", status.chat.id, status.message_id, parse_mode='Markdown')
 
         with open(filename, 'rb') as audio:
             bot.send_audio(
                 message.chat.id,
                 audio,
-                caption=f"🎵 **{title} (1.15x)**\n⏱ {time.strftime('%M:%S', time.gmtime(new_duration))}",
+                caption=f"🎵 **{title} (1.15x)**\n👤 {uploader}\n⏱ {time.strftime('%M:%S', time.gmtime(new_duration))}",
                 title=f"{title} (1.15x)",
                 performer=uploader,
+                parse_mode='Markdown',
                 reply_to_message_id=message.message_id
             )
 
@@ -120,12 +130,11 @@ def handle_message(message):
         if os.path.exists(filename): os.remove(filename)
 
     except Exception as e:
-        error_str = str(e)
-        bot.edit_message_text(f"❌ Lỗi: {error_str[:150]}", status.chat.id, status.message_id)
-        # Dọn dẹp nếu có file rác
+        err = str(e)[:200]
+        bot.edit_message_text(f"❌ Lỗi: {err}", status.chat.id, status.message_id)
+        # Dọn dẹp file rác nếu lỗi
         for f in os.listdir('.'):
-            if f.endswith((".mp3", ".webm", ".m4a")):
-                 if len(f) > 5: os.remove(f)
+            if f.startswith("track_"): os.remove(f)
 
-print("🚀 Bot đã sẵn sàng!")
+print("🚀 Bot Nhạc 1.15x đang chạy...")
 bot.infinity_polling()
