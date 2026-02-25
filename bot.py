@@ -20,14 +20,21 @@ def main_kb():
 def start(message):
     bot.send_message(
         message.chat.id,
-        f"""🎵 **BOT TẢI NHẠC MP3 (1.15x Speed)**
+        f"""🎵 **BOT TẢI NHẠC MP3 (Speed 1.15x)**
 
 Chào {message.from_user.first_name}!
 Tất cả nhạc tải về sẽ tự động được tăng tốc lên **1.15x**.
 
 📌 Gõ lệnh:
 /play tên bài hát
-/play link YouTube""",
+/play link YouTube
+
+Ví dụ:
+/play Anh nhớ em nhiều lắm remix
+/play https://youtu.be/...
+
+✅ Chất lượng 192kbps+ | Tốc độ 1.15x
+⚠️ Nếu lỗi FFmpeg -> Hãy cài đặt ffmpeg trên server/Railway""",
         parse_mode='Markdown',
         reply_markup=main_kb()
     )
@@ -35,19 +42,27 @@ Tất cả nhạc tải về sẽ tự động được tăng tốc lên **1.15x
 @bot.message_handler(commands=['help'])
 def help_cmd(message):
     bot.reply_to(message,
-        """🎵 **HƯỚNG DẪN**
+        """🎵 **HƯỚNG DẪN CHI TIẾT**
+
 /play tên bài hát hoặc link YouTube
-Hệ thống tự động apply filter `atempo=1.15`.""",
+Hệ thống sẽ tự động xử lý tăng tốc 1.15x trước khi gửi.
+
+Nếu lỗi:
+- "Sign in..." -> Cần cookies.txt mới.
+- "FFmpeg not found" -> Server chưa cài FFmpeg để xử lý âm thanh.
+- "Video unavailable" -> Video bị chặn hoặc riêng tư.
+
+Chúc nghe nhạc vui! 🎧""",
         parse_mode='Markdown'
     )
 
 @bot.message_handler(func=lambda m: True)
 def handle_message(message):
     text = message.text.strip()
-    if text in ['🎵 tìm nhạc', 'tìm nhạc']:
+    if text in ['🎵 tìm nhạc', 'tìm nhạc', '🎵 Tìm nhạc']:
         bot.reply_to(message, "Gõ /play tên bài hát hoặc link nhé!")
         return
-    if text in ['❓ hướng dẫn', 'hướng dẫn']:
+    if text in ['❓ hướng dẫn', 'hướng dẫn', '❓ Hướng dẫn']:
         help_cmd(message)
         return
 
@@ -59,7 +74,7 @@ def handle_message(message):
         bot.reply_to(message, "❌ Nhập tên bài hát hoặc link YouTube!")
         return
 
-    status = bot.reply_to(message, "🔍 Đang tìm + xử lý nhạc 1.15x...")
+    status = bot.reply_to(message, "🔍 Đang tìm + xử lý nhạc (Speed 1.15x)...")
 
     try:
         ydl_opts = {
@@ -74,11 +89,11 @@ def handle_message(message):
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
-            # --- ĐOẠN THÊM VÀO ĐỂ TĂNG TỐC 1.15x ---
+            # --- PHẦN THÊM VÀO ĐỂ TĂNG TỐC 1.15X ---
             'postprocessor_args': [
                 '-filter:a', 'atempo=1.15'
             ],
-            # --------------------------------------
+            # ---------------------------------------
             'noplaylist': True,
             'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -98,7 +113,7 @@ def handle_message(message):
 
             title = info.get('title', 'Unknown')
             duration = info.get('duration', 0)
-            # Tính toán lại thời gian hiển thị (chia cho 1.15)
+            # Tính toán lại thời gian hiển thị sau khi tăng tốc
             new_duration = int(duration / 1.15)
             uploader = info.get('uploader', 'Unknown')
 
@@ -132,7 +147,13 @@ def handle_message(message):
 
     except Exception as e:
         err = str(e)[:200]
-        bot.edit_message_text(f"❌ Lỗi: {err}", status.chat.id, status.message_id)
+        if "Sign in" in err:
+            msg = "❌ Lỗi YouTube: Cần cookies.txt mới."
+        elif "ffmpeg" in err.lower():
+            msg = "❌ Lỗi: Server thiếu FFmpeg để xử lý tốc độ 1.15x."
+        else:
+            msg = f"❌ Lỗi: {err}"
+        bot.edit_message_text(msg, status.chat.id, status.message_id)
 
 print("🚀 Bot Nhạc MP3 (1.15x) đang chạy...")
 bot.infinity_polling()
