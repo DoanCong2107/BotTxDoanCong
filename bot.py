@@ -3,37 +3,24 @@ import telebot
 import yt_dlp
 import tempfile
 import time
-import subprocess
-import shutil
-
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 
-# ====================== CẤU HÌNH BOT ======================
-# Lấy token từ biến môi trường Railway
 TOKEN = os.getenv('BOT_TOKEN')
 if not TOKEN:
     raise ValueError("❌ Chưa set BOT_TOKEN trên Railway!")
 
-# Khởi tạo bot
 bot = telebot.TeleBot(TOKEN)
 
-# ====================== CẤU HÌNH TĂNG TỐC ======================
-# Tốc độ bạn muốn (1.15x là nhẹ nhàng, tự nhiên nhất)
-SPEED_FACTOR = 1.15
-SPEED_TEXT = f"{SPEED_FACTOR}x"
-
-# ====================== KEYBOARD MENU ======================
 def main_kb():
     kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     kb.add(KeyboardButton('🎵 Tìm nhạc'), KeyboardButton('❓ Hướng dẫn'))
     return kb
 
-# ====================== LỆNH /START ======================
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.send_message(
         message.chat.id,
-        f"""🎵 **BOT TẢI NHẠC MP3 TĂNG TỐC {SPEED_TEXT}**
+        f"""🎵 **BOT TẢI NHẠC MP3** (YouTube → MP3)
 
 Chào {message.from_user.first_name}!
 
@@ -41,97 +28,82 @@ Chào {message.from_user.first_name}!
 /play tên bài hát
 /play link YouTube
 
-✅ Tự động tăng tốc {SPEED_TEXT} (giữ nguyên cao độ giọng nói)
-✅ Chất lượng audio gì cũng được (bitrate thấp nhất có)
-⚠️ File tối đa \~50MB (giới hạn Telegram)
-⚠️ Nếu lỗi Sign in → upload cookies.txt mới từ Cốc Cốc
+Ví dụ:
+/play Anh nhớ em nhiều lắm remix
+/play https://youtu.be/...
+
+✅ Chất lượng cao nhất có thể (192kbps+)
+⚠️ File max \~50MB (giới hạn Telegram)
+⚠️ Nếu lỗi "Sign in to confirm you're not a bot" → upload cookies.txt mới
+⚠️ Nếu lỗi "không hỗ trợ audio chất lượng cao" → thử link khác hoặc tên bài dài hơn
 
 Chơi nhạc vui nhé! 🔥""",
         parse_mode='Markdown',
         reply_markup=main_kb()
     )
 
-# ====================== LỆNH /HELP ======================
 @bot.message_handler(commands=['help'])
 def help_cmd(message):
     bot.reply_to(message,
-        f"""🎵 **HƯỚNG DẪN CHI TIẾT**
+        """🎵 **HƯỚNG DẪN CHI TIẾT**
 
-/play vinagang
-/play Anh nhớ em nhiều lắm remix
-/play https://youtu.be/...
+/play tên bài hát hoặc link YouTube
+/play Anh nhớ em nhiều lắm remix bản dài
 
-✅ Tăng tốc {SPEED_TEXT} bằng ffmpeg
-✅ Hỗ trợ TẤT CẢ nhạc Việt (kể cả remix ngắn, Short, DJ)
-
-Lỗi thường gặp:
-• "format not available" → đã fix fallback bitrate thấp nhất
-• "Sign in to confirm..." → upload cookies.txt mới từ Cốc Cốc/Chrome VN
-• "Video không khả dụng" → thử tên bài khác
+Nếu lỗi:
+- "Sign in..." → Lấy cookies.txt mới từ Chrome (extension Get cookies.txt LOCALLY) → upload lên Railway
+- "Không hỗ trợ audio chất lượng cao" → Video không có audio riêng, thử link video dài hơn (không phải Short)
+- "Video unavailable" → Video bị chặn khu vực hoặc private, thử bài khác
 
 Thêm bot vào group cũng dùng được!
 
-Chúc nghe nhạc vui vẻ! 🎧""",
+Chúc nghe nhạc vui! 🎧""",
         parse_mode='Markdown'
     )
 
-# ====================== XỬ LÝ TẤT CẢ TIN NHẮN ======================
 @bot.message_handler(func=lambda m: True)
 def handle_message(message):
-    text = message.text.strip().lower()
-
-    # Xử lý nút keyboard
+    text = message.text.strip()
     if text in ['🎵 tìm nhạc', 'tìm nhạc']:
-        bot.reply_to(message, "Gõ /play tên bài hát hoặc link YouTube nhé!")
+        bot.reply_to(message, "Gõ /play tên bài hát hoặc link nhé!")
         return
     if text in ['❓ hướng dẫn', 'hướng dẫn']:
         help_cmd(message)
         return
 
-    # Chỉ xử lý lệnh bắt đầu bằng /play hoặc play
-    if not text.startswith(('/play ', 'play ')):
+    if not text.lower().startswith(('/play ', 'play ')):
         return
 
-    # Lấy nội dung sau /play
-    query = message.text.split(maxsplit=1)[1] if len(message.text.split()) > 1 else ""
+    query = text.split(maxsplit=1)[1] if len(text.split()) > 1 else ""
     if not query:
         bot.reply_to(message, "❌ Nhập tên bài hát hoặc link YouTube!")
         return
 
-    # Gửi thông báo đang xử lý
-    status = bot.reply_to(message, "🔍 Đang tìm + tải + tăng tốc...")
-
-    # Tạo file tạm thời
-    temp_dir = tempfile.gettempdir()
-    original_mp3 = os.path.join(temp_dir, f"orig_{int(time.time())}.mp3")
-    spedup_mp3 = os.path.join(temp_dir, f"sped_{int(time.time())}.mp3")
+    status = bot.reply_to(message, "🔍 Đang tìm + tải nhạc...")
 
     try:
-        # Cấu hình yt-dlp - ĐÃ CHỈNH Fallback bitrate thấp nhất
         ydl_opts = {
-            'format': 'ba/best',                  # ba = bestaudio, fallback best nếu không có audio riêng
+            'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best[height<=480]/best',
             'default_search': 'ytsearch',
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
-            'outtmpl': original_mp3,
+            'outtmpl': os.path.join(tempfile.gettempdir(), '%(title)s.%(ext)s'),
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
-                'preferredquality': '0',          # 0 = lấy bitrate thấp nhất có (fallback tự động nếu không 192kbps)
+                'preferredquality': '192',
             }],
             'noplaylist': True,
             'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                 'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8'
             },
             'geo_bypass': True,
-            'ignoreerrors': True,                 # Bỏ qua lỗi format nhỏ, thử fallback
         }
 
-        # Tải nhạc
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(query, download=True)
             if 'entries' in info:
@@ -143,41 +115,24 @@ def handle_message(message):
             duration = info.get('duration', 0)
             uploader = info.get('uploader', 'Unknown')
 
+            filename = ydl.prepare_filename(info)
+            if not filename.endswith('.mp3'):
+                filename = filename.rsplit('.', 1)[0] + '.mp3'
+
             if duration > 1800:
-                raise Exception("Bài quá dài (>30 phút)")
+                bot.edit_message_text("❌ Bài quá dài (>30 phút)", status.chat.id, status.message_id)
+                if os.path.exists(filename):
+                    os.remove(filename)
+                return
 
-        # Thông báo đang tăng tốc
-        bot.edit_message_text(f"⚡ Đang tăng tốc {SPEED_TEXT} + gửi file: **{title}**...", 
-                              status.chat.id, status.message_id, parse_mode='Markdown')
+        bot.edit_message_text(f"⬇️ Đang gửi file: **{title}**...", status.chat.id, status.message_id, parse_mode='Markdown')
 
-        # Kiểm tra ffmpeg
-        if not shutil.which("ffmpeg"):
-            raise Exception("❌ FFmpeg NOT found in PATH!")
-
-        # Chạy ffmpeg tăng tốc
-        ffmpeg_cmd = [
-            "ffmpeg", "-y", "-i", original_mp3,
-            "-filter:a", f"atempo={SPEED_FACTOR}",
-            "-b:a", "64k",                        # Hạ xuống thấp nhất để fallback tốt, file nhẹ
-            spedup_mp3
-        ]
-        result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise Exception(f"ffmpeg lỗi: {result.stderr[:150]}")
-
-        # Tính thời lượng mới
-        new_duration = int(duration / SPEED_FACTOR)
-
-        # Gửi file
-        bot.edit_message_text(f"⬇️ Đang gửi file tăng tốc {SPEED_TEXT}: **{title}**...", 
-                              status.chat.id, status.message_id, parse_mode='Markdown')
-
-        with open(spedup_mp3, 'rb') as audio:
+        with open(filename, 'rb') as audio:
             bot.send_audio(
                 message.chat.id,
                 audio,
-                caption=f"🎵 **{title}** (tăng tốc {SPEED_TEXT})\n👤 {uploader}\n⏱ {time.strftime('%M:%S', time.gmtime(new_duration))}",
-                title=f"{title} ({SPEED_TEXT})",
+                caption=f"🎵 **{title}**\n👤 {uploader}\n⏱ {time.strftime('%M:%S', time.gmtime(duration))}",
+                title=title,
                 performer=uploader,
                 parse_mode='Markdown',
                 reply_to_message_id=message.message_id
@@ -185,29 +140,20 @@ def handle_message(message):
 
         bot.delete_message(status.chat.id, status.message_id)
 
+        if os.path.exists(filename):
+            os.remove(filename)
+
     except Exception as e:
-        err = str(e)[:250]
-        if "format is not available" in err or "not available" in err:
-            msg = "❌ Video không có audio stream phù hợp. Thử link khác hoặc upload cookies.txt mới từ Cốc Cốc!"
-        elif "Sign in" in err or "confirm you're not a bot" in err:
-            msg = "❌ Lỗi YouTube: cần cookies.txt mới! Export từ Cốc Cốc/Chrome VN upload Railway."
+        err = str(e)[:200]
+        if "Sign in" in err or "confirm you're not a bot" in err:
+            msg = "❌ Lỗi YouTube: cần cookies.txt mới. Lấy từ Chrome (extension Get cookies.txt LOCALLY) → upload lại!"
         elif "unavailable" in err or "not available" in err:
-            msg = "❌ Video không khả dụng hoặc bị chặn khu vực!"
-        elif "ffmpeg" in err:
-            msg = "❌ Lỗi tăng tốc ffmpeg. Redeploy lại!"
+            msg = "❌ Video không khả dụng hoặc bị chặn khu vực. Thử tên/link khác!"
+        elif "format" in err or "not available" in err or "audio" in err:
+            msg = "❌ Video không hỗ trợ audio chất lượng cao (có thể là Short/remix). Thử link video dài hơn hoặc tên bài khác!"
         else:
             msg = f"❌ Lỗi: {err}"
         bot.edit_message_text(msg, status.chat.id, status.message_id)
 
-    finally:
-        # Xóa file tạm
-        for f in [original_mp3, spedup_mp3]:
-            if os.path.exists(f):
-                try:
-                    os.remove(f)
-                except:
-                    pass
-
-# ====================== KHỞI ĐỘNG BOT ======================
-print("🚀 Bot Nhạc MP3 Tăng Tốc đang chạy...")
+print("🚀 Bot Nhạc MP3 đang chạy...")
 bot.infinity_polling()
