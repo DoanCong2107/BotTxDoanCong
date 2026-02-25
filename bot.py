@@ -4,21 +4,13 @@ import yt_dlp
 import time
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
-# Lấy Token từ môi trường Railway
+# Khởi tạo Token
 TOKEN = os.getenv('BOT_TOKEN')
-if not TOKEN:
-    raise ValueError("❌ Chưa set BOT_TOKEN trên Railway!")
-
 bot = telebot.TeleBot(TOKEN)
 
-# Hàm định dạng số view cho đẹp (VD: 1.5M, 200K)
-def format_views(n):
-    if not n: return "0"
-    if n >= 1000000: return f"{n/1000000:.1f}M"
-    if n >= 1000: return f"{n/1000:.1f}K"
-    return str(n)
+# Bộ nhớ tạm lưu thông tin video
+user_cache = {}
 
-# Bàn phím chính dưới khung chat
 def main_kb():
     kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     kb.add(KeyboardButton('🎵 Tìm nhạc'), KeyboardButton('❓ Hướng dẫn'))
@@ -27,127 +19,124 @@ def main_kb():
 @bot.message_handler(commands=['start'])
 def start(message):
     welcome = (
-        f"👋 **Chào mừng {message.from_user.first_name}!**\n"
+        f"👋 **Chào {message.from_user.first_name}!**\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        "🎧 **Bot Tải Nhạc MP3 Premium**\n"
-        "⚡ Tốc độ xử lý: **1.15x Speed**\n"
-        "✨ Chất lượng: **192kbps High Quality**\n"
+        "🎧 **MUSIC PRO MAX DOWNLOADER**\n"
+        "✨ Tùy chọn: Speed up, Nightcore, Bass Boost\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        "👇 Nhấn nút hoặc gõ `/play + tên bài` để nghe nhạc!"
+        "👇 Nhập tên bài hát hoặc link bên dưới:"
     )
     bot.send_message(message.chat.id, welcome, parse_mode='Markdown', reply_markup=main_kb())
-
-@bot.message_handler(commands=['help'])
-def help_cmd(message):
-    help_text = (
-        "📖 **HƯỚNG DẪN SỬ DỤNG**\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        "1️⃣ Gõ `/play` kèm tên bài hát hoặc link.\n"
-        "   Ví dụ: `/play Em của ngày hôm qua`\n"
-        "2️⃣ Đợi bot tìm kiếm và xử lý tốc độ 1.15x.\n"
-        "3️⃣ Nhận file MP3 và thưởng thức!\n\n"
-        "⚠️ *Lưu ý:* Video dài trên 40 phút sẽ bị từ chối để đảm bảo tốc độ server."
-    )
-    bot.reply_to(message, help_text, parse_mode='Markdown')
 
 @bot.message_handler(func=lambda m: True)
 def handle_message(message):
     text = message.text.strip()
-    
-    # Xử lý các nút bấm bàn phím
     if text.lower() in ['🎵 tìm nhạc', 'tìm nhạc']:
-        bot.reply_to(message, "🎶 **Bạn muốn nghe gì hôm nay?**\nHãy gõ `/play` kèm tên bài hát nhé!")
+        bot.reply_to(message, "🎶 Gõ `/play + tên bài` để hiện menu chọn chế độ!")
         return
     if text.lower() in ['❓ hướng dẫn', 'hướng dẫn']:
-        help_cmd(message)
+        bot.reply_to(message, "Gõ `/play tên bài` -> Chọn chế độ (Gốc/Speed/Méo giọng) -> Nhận nhạc.")
         return
 
-    # Kiểm tra lệnh /play hoặc play
-    if not text.lower().startswith(('/play ', 'play ')):
-        return
-
+    if not text.lower().startswith(('/play ', 'play ')): return
     query = text.split(maxsplit=1)[1] if len(text.split()) > 1 else ""
-    if not query:
-        bot.reply_to(message, "❌ **Đại ca ơi, nhập tên bài hát nữa chứ!**\nVí dụ: `/play Anh nhà ở đâu thế`", parse_mode='Markdown')
-        return
+    if not query: return
 
-    # Bước 1: Giao diện tìm kiếm
-    status = bot.reply_to(message, "🔍 **Đang tìm kiếm bài hát...**\n`[ ░░░░░░░░░░ ] 0%`", parse_mode='Markdown')
+    status = bot.reply_to(message, "🔍 **Đang tìm kiếm bài hát...**", parse_mode='Markdown')
 
     try:
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'default_search': 'ytsearch1',
-            'quiet': True,
-            'no_warnings': True,
-            'outtmpl': 'track_%(id)s.%(ext)s',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-            # Xử lý tăng tốc 1.15x
-            'postprocessor_args': ['-filter:a', 'atempo=1.15'],
-            'noplaylist': True,
-            'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        }
-
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Bước 2: Hiệu ứng xử lý
-            bot.edit_message_text("⚡ **Đang xử lý âm thanh 1.15x...**\n`[ ██████░░░░ ] 60%`", status.chat.id, status.message_id, parse_mode='Markdown')
-            
-            info = ydl.extract_info(query, download=True)
+        # Chỉ lấy thông tin, chưa tải
+        with yt_dlp.YoutubeDL({'quiet': True, 'default_search': 'ytsearch1', 'noplaylist': True}) as ydl:
+            info = ydl.extract_info(query, download=False)
             if 'entries' in info: info = info['entries'][0]
             
-            title = info.get('title', 'Unknown')
-            views = info.get('view_count', 0)
-            uploader = info.get('uploader', 'Unknown')
-            webpage_url = info.get('webpage_url')
-            duration = info.get('duration', 0)
-            filename = f"track_{info['id']}.mp3"
-            new_duration = int(duration / 1.15)
+            v_id = info['id']
+            user_cache[v_id] = {
+                'title': info.get('title', 'Unknown'),
+                'url': info.get('webpage_url'),
+                'uploader': info.get('uploader', 'Unknown'),
+                'duration': info.get('duration', 0)
+            }
 
-            if duration > 2400:
-                bot.edit_message_text("❌ **Video quá dài!**\nVui lòng chọn bài dưới 40 phút.", status.chat.id, status.message_id)
-                if os.path.exists(filename): os.remove(filename)
-                return
-
-        # Nút bấm Inline
-        markup = InlineKeyboardMarkup()
-        markup.row(InlineKeyboardButton("📺 Xem Video gốc", url=webpage_url))
-        markup.row(InlineKeyboardButton("🔄 Tìm bài khác", switch_inline_query_current_chat=""))
-
-        bot.edit_message_text("✅ **Đã xong! Đang gửi nhạc...**\n`[ ██████████ ] 100%`", status.chat.id, status.message_id, parse_mode='Markdown')
-
-        # Gửi file nhạc cuối cùng
-        with open(filename, 'rb') as audio:
-            bot.send_audio(
-                message.chat.id, 
-                audio,
-                caption=(
-                    f"🎵 **{title.upper()}**\n"
-                    f"━━━━━━━━━━━━━━━━━━\n"
-                    f"👤 **Ca sĩ:** {uploader}\n"
-                    f"⏱ **Dài:** {time.strftime('%M:%S', time.gmtime(new_duration))} *(Speed 1.15x)*\n"
-                    f"👁 **Lượt xem:** {format_views(views)}\n"
-                    f"━━━━━━━━━━━━━━━━━━\n"
-                    f"🔥 *Chúc bạn nghe nhạc vui vẻ!*"
-                ),
-                title=f"{title} (1.15x)",
-                performer=uploader,
-                reply_markup=markup,
-                parse_mode='Markdown'
+            # Menu chọn chế độ
+            markup = InlineKeyboardMarkup(row_width=2)
+            markup.add(
+                InlineKeyboardButton("▶️ Bản Gốc", callback_data=f"mode_orig_{v_id}"),
+                InlineKeyboardButton("⚡ Speed 1.15x", callback_data=f"mode_sp115_{v_id}"),
+                InlineKeyboardButton("🍬 Nightcore (Méo giọng)", callback_data=f"mode_night_{v_id}"),
+                InlineKeyboardButton("🔊 Bass Boost", callback_data=f"mode_bass_{v_id}")
             )
 
-        bot.delete_message(status.chat.id, status.message_id)
+            bot.edit_message_text(
+                f"🎵 **Đã tìm thấy:** `{info['title']}`\n\n👇 **Đại ca muốn xử lý bài này thế nào?**",
+                message.chat.id, status.message_id, reply_markup=markup, parse_mode='Markdown'
+            )
+
+    except Exception as e:
+        bot.edit_message_text(f"❌ Lỗi: {str(e)[:100]}", message.chat.id, status.message_id)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('mode_'))
+def process_audio(call):
+    # Callback format: mode_TYPE_ID
+    _, m_type, v_id = call.data.split('_')
+    data = user_cache.get(v_id)
+
+    if not data:
+        bot.answer_callback_query(call.id, "❌ Hết hạn, hãy tìm lại bài hát!")
+        return
+
+    bot.edit_message_text(f"⚙️ **Đang render chế độ {m_type.upper()}...**\n`[ ██████░░░░ ] 60%`", call.message.chat.id, call.message.message_id, parse_mode='Markdown')
+
+    # Cấu hình FFmpeg Filter dựa trên nút bấm
+    ffmpeg_args = []
+    suffix = ""
+    new_dur = data['duration']
+
+    if m_type == "sp115":
+        ffmpeg_args = ['-filter:a', 'atempo=1.15']
+        suffix = " [1.15x Speed]"
+        new_dur /= 1.15
+    elif m_type == "night":
+        # Tăng cao độ (Pitch) + Tăng tốc độ = Giọng Nightcore 
+        ffmpeg_args = ['-filter:a', 'asetrate=44100*1.25,atempo=1.25/1.25,atempo=1.1']
+        suffix = " [Nightcore]"
+        new_dur /= 1.35
+    elif m_type == "bass":
+        ffmpeg_args = ['-filter:a', 'bass=g=10:f=100:w=0.5']
+        suffix = " [Bass Boosted]"
+    else:
+        suffix = " [Original]"
+
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': f'track_{v_id}.%(ext)s',
+        'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
+        'postprocessor_args': ffmpeg_args,
+        'quiet': True,
+        'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([data['url']])
+            filename = f"track_{v_id}.mp3"
+
+        with open(filename, 'rb') as audio:
+            bot.send_audio(
+                call.message.chat.id, audio,
+                caption=f"🎵 **{data['title']}{suffix}**\n👤 {data['uploader']}\n⏱ {time.strftime('%M:%S', time.gmtime(int(new_dur)))}",
+                title=f"{data['title']}{suffix}",
+                performer="Gemini Music Bot",
+                reply_to_message_id=call.message.reply_to_message.message_id
+            )
+        
+        bot.delete_message(call.message.chat.id, call.message.message_id)
         if os.path.exists(filename): os.remove(filename)
 
     except Exception as e:
-        bot.edit_message_text(f"❌ **Lỗi rồi đại ca ơi:**\n`{str(e)[:150]}`", status.chat.id, status.message_id, parse_mode='Markdown')
-        # Dọn dẹp file rác nếu có lỗi
-        for f in os.listdir('.'):
-            if f.startswith("track_"): os.remove(f)
+        bot.send_message(call.message.chat.id, f"❌ Lỗi: {str(e)[:100]}")
+    
+    # Dọn dẹp cache
+    if v_id in user_cache: del user_cache[v_id]
 
-print("🚀 Bot Nhạc MP3 Giao diện mới đang chạy...")
 bot.infinity_polling()
