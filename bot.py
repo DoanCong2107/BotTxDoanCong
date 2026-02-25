@@ -3,22 +3,22 @@ import telebot
 import yt_dlp
 import time
 import threading
+import random
 import logging
 from telebot import types
 from datetime import datetime
 
 # === CẤU HÌNH HỆ THỐNG ===
 TOKEN = os.getenv('BOT_TOKEN')
-bot = telebot.TeleBot(TOKEN, threaded=True, num_threads=10)
+bot = telebot.TeleBot(TOKEN, threaded=True, num_threads=20)
 MY_BRAND = "DoanCong🥷"
 
-# Thiết lập Log để đại ca dễ theo dõi lỗi
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Log hệ thống để theo dõi
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# Database giả lập (Trong thực tế nên dùng SQLite/Redis)
+# Database giả lập
 user_db = {} 
-processing_tasks = {}
+task_map = {}
 
 # Hệ thống 10 danh hiệu Remix Đẳng Cấp
 TITLES = [
@@ -33,129 +33,152 @@ def get_title(count):
         if count >= threshold: return title
     return TITLES[0][1]
 
-# === GIAO DIỆN ===
-def main_keyboard():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    markup.add(
-        types.KeyboardButton('🎵 Tìm nhạc'), 
-        types.KeyboardButton('📊 Hồ sơ VIP'),
-        types.KeyboardButton('🔥 Xu hướng'), 
-        types.KeyboardButton('❓ Trợ giúp')
-    )
-    return markup
+# === GIAO DIỆN MENU CHÍNH ===
+def main_kb():
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    kb.add(types.KeyboardButton('🔮 TÌM NHẠC'), types.KeyboardButton('👤 HỒ SƠ VIP'))
+    kb.add(types.KeyboardButton('🎁 ĐIỂM DANH'), types.KeyboardButton('🏆 BẢNG XẾP HẠNG'))
+    kb.add(types.KeyboardButton('🔥 XU HƯỚNG'), types.KeyboardButton('⚙️ TRỢ GIÚP'))
+    return kb
 
-def inline_options(v_id):
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        types.InlineKeyboardButton(f"🍬 Remix Méo Tiếng (Style {MY_BRAND})", callback_data=f"opt:night:{v_id}"),
-        types.InlineKeyboardButton(f"⚡ Tăng Tốc Speed Up (Style {MY_BRAND})", callback_data=f"opt:speed:{v_id}")
-    )
-    return markup
-
-# === XỬ LÝ LỆNH ===
+# === XỬ LÝ LỆNH KHỞI ĐẦU ===
 @bot.message_handler(commands=['start', 'help'])
-def send_welcome(message):
+def start(message):
     uid = str(message.from_user.id)
     if uid not in user_db:
-        user_db[uid] = {'count': 0, 'join_date': datetime.now().strftime("%d/%m/%Y")}
+        user_db[uid] = {'count': 0, 'date': datetime.now().strftime("%d/%m/%Y"), 'last_daily': 0}
     
-    welcome_text = (
-        f"👑 **MUSIC PRO MAX - EXCLUSIVE BY {MY_BRAND}**\n"
+    welcome = (
+        f"        ── {MY_BRAND} ──\n"
+        f"🥷 **NIGHTCORE REMIX SUPREME 2026**\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"👤 **Chủ nhân:** {message.from_user.first_name}\n"
-        f"🎖 **Danh hiệu:** {get_title(user_db[uid]['count'])}\n"
-        f"📅 **Ngày tham gia:** {user_db[uid]['join_date']}\n"
+        f"👋 Chào mừng đại ca: **{message.from_user.first_name}**\n"
+        f"🎖 Cấp bậc: `{get_title(user_db[uid]['count'])}`\n"
+        f"📊 Sản phẩm: `{user_db[uid]['count']} bài`\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🚀 **Đại ca hãy dán link YouTube hoặc gõ tên bài hát!**\n"
-        f"⚠️ *Hệ thống tự động đóng dấu bản quyền {MY_BRAND} vào file.*"
+        f"📥 **Gửi link hoặc tên bài hát để em phục vụ!**"
     )
-    bot.send_message(message.chat.id, welcome_text, reply_markup=main_keyboard(), parse_mode='Markdown')
+    bot.send_message(message.chat.id, welcome, reply_markup=main_kb(), parse_mode='Markdown')
 
+# === QUẢN LÝ TIN NHẮN VÀ TÍNH NĂNG PHỤ ===
 @bot.message_handler(func=lambda m: True)
-def handle_all_messages(message):
+def handle_all(message):
     uid = str(message.from_user.id)
-    if uid not in user_db: user_db[uid] = {'count': 0, 'join_date': "N/A"}
+    if uid not in user_db: user_db[uid] = {'count': 0, 'date': "N/A", 'last_daily': 0}
     text = message.text.strip()
 
-    # Xử lý các nút Menu
-    if text == '📊 Hồ sơ VIP':
+    if text == '👤 HỒ SƠ VIP':
         count = user_db[uid]['count']
-        bot.reply_to(message, f"📈 **THỐNG KÊ DOANCONG SYSTEM:**\n━━━━━━━━━━━━━\n✅ Sản phẩm đã làm: `{count}` bài\n🎖 Đẳng cấp: `*{get_title(count)}*`", parse_mode='Markdown')
-        return
-    
-    if text == '🔥 Xu hướng':
-        bot.reply_to(message, "🔥 **TOP SEARCHING:**\n1. Vinahouse DoanCong Mix\n2. TikTok Remix 2026\n3. Bass Boosted VIP")
+        bot.reply_to(message, f"👤 **PRODUCER PROFILE**\n━━━━━━━━━━━━━\n⚡ Nghệ danh: **{MY_BRAND}**\n🎵 Đã làm: `{count}` bài\n🏆 Danh hiệu: `{get_title(count)}`", parse_mode='Markdown')
         return
 
-    if text in ['🎵 Tìm nhạc', '❓ Trợ giúp']:
-        bot.reply_to(message, "Dán link hoặc gõ tên bài để em phục vụ đại ca nhé!")
+    if text == '🎁 ĐIỂM DANH':
+        now = time.time()
+        if now - user_db[uid]['last_daily'] > 86400:
+            bonus = random.randint(1, 3)
+            user_db[uid]['count'] += bonus
+            user_db[uid]['last_daily'] = now
+            bot.reply_to(message, f"🎁 **HÀNG NÓNG VỀ!**\nĐại ca được cộng `{bonus}` điểm Exp Remix vào hồ sơ!")
+        else:
+            bot.reply_to(message, "⏳ Quà hôm nay nhận rồi, mai quay lại nhé đại ca!")
         return
 
-    # Bắt đầu tìm kiếm
-    search_msg = bot.reply_to(message, "🔍 **Đang quét máy chủ YouTube...**", parse_mode='Markdown')
+    if text == '🏆 BẢNG XẾP HẠNG':
+        bot.reply_to(message, f"🏆 **BẢNG VÀNG DOANCONG SYSTEM:**\n1. **{message.from_user.first_name}** (Producer số 1)\n2. Dân chơi 9x\n3. Thánh Bass", parse_mode='Markdown')
+        return
+
+    if text.startswith('/') or text in ['🔮 TÌM NHẠC', '🔥 XU HƯỚNG', '⚙️ TRỢ GIÚP']: return
+
+    # --- PHOTO CAPTION GIAO DIỆN SANG TRỌNG ---
+    wait = bot.reply_to(message, "🔮 **Đang thâm nhập máy chủ YouTube...**", parse_mode='Markdown')
     
     def search_task():
         try:
-            ydl_opts = {
-                'quiet': True, 'default_search': 'ytsearch1', 'noplaylist': True,
-                'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-            }
+            ydl_opts = {'quiet': True, 'default_search': 'ytsearch1', 'noplaylist': True}
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(text, download=False)
                 if 'entries' in info: info = info['entries'][0]
                 
                 v_id = info['id']
-                processing_tasks[v_id] = {
-                    'url': info['webpage_url'], 
-                    'title': info['title'], 
-                    'status_id': search_msg.message_id,
-                    'chat_id': message.chat.id
-                }
+                task_map[v_id] = {'url': info['webpage_url'], 'title': info['title']}
 
-                bot.edit_message_text(
-                    f"🎵 **Phát hiện:** `{info['title']}`\n"
-                    f"⏱ **Thời lượng:** {time.strftime('%M:%S', time.gmtime(info['duration']))}\n"
-                    f"━━━━━━━━━━━━━━━━━━━━━\n"
-                    f"👇 **Đại ca {MY_BRAND} chọn kiểu xử lý:**",
-                    message.chat.id, search_msg.message_id, 
-                    reply_markup=inline_options(v_id), parse_mode='Markdown'
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                markup.add(
+                    types.InlineKeyboardButton(f"🍬 Remix Nightcore (Style {MY_BRAND})", callback_data=f"doan|night|{v_id}"),
+                    types.InlineKeyboardButton(f"⚡ Speed Up 1.2x (Style {MY_BRAND})", callback_data=f"doan|speed|{v_id}")
                 )
-        except Exception as e:
-            bot.edit_message_text(f"❌ Không tìm thấy nhạc hoặc lỗi server: {str(e)[:50]}", message.chat.id, search_msg.message_id)
+
+                caption = (
+                    f"🎬 **KẾT QUẢ TRUY XUẤT**\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"🎼 Bài hát: `{info['title']}`\n"
+                    f"⏱ Thời lượng: `{time.strftime('%M:%S', time.gmtime(info['duration']))}`\n"
+                    f"🛰 Trạng thái: `Sẵn sàng mod bản quyền`\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"👇 **Đại ca chọn kiểu xử lý âm thanh:**"
+                )
+                bot.send_photo(message.chat.id, info['thumbnail'], caption=caption, reply_markup=markup, parse_mode='Markdown')
+                bot.delete_message(message.chat.id, wait.message_id)
+        except:
+            bot.edit_message_text("❌ Không tìm thấy nhạc!", message.chat.id, wait.message_id)
 
     threading.Thread(target=search_task).start()
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('opt:'))
-def callback_handler(call):
-    _, mode, v_id = call.data.split(':')
-    data = processing_tasks.get(v_id)
+# === XỬ LÝ CHUYỂN ĐỘNG PROGRESS BAR & RENDER ===
+@bot.callback_query_handler(func=lambda call: call.data.startswith('doan|'))
+def process_it(call):
+    _, mode, v_id = call.data.split('|')
+    data = task_map.get(v_id)
     uid = str(call.from_user.id)
 
     if not data:
-        bot.answer_callback_query(call.id, "⚠️ Yêu cầu quá hạn!")
+        bot.answer_callback_query(call.id, "❌ Yêu cầu hết hạn!")
         return
 
-    bot.edit_message_text(f"⚙️ **Đang render & Mod Metadata...**\n`[ ████████░░ ] 80%`", data['chat_id'], data['status_id'], parse_mode='Markdown')
+    # Hàm tạo hiệu ứng thanh tiến trình chuyển động
+    def update_progress_ui():
+        steps = [
+            ("📡 Kết nối máy chủ...", "[ ░░░░░░░░░░ ] 5%"),
+            ("📥 Đang tải âm thanh...", "[ ██░░░░░░░░ ] 25%"),
+            ("⚙️ Ép xung dải Bass...", "[ ████░░░░░░ ] 45%"),
+            ("🍬 Modding Nightcore...", "[ ██████░░░░ ] 65%"),
+            ("🥷 Nhúng bản quyền DoanCong...", "[ ████████░░ ] 85%"),
+            ("✅ Đang xuất sản phẩm...", "[ ██████████ ] 100%")
+        ]
+        for status, bar in steps:
+            try:
+                render_text = (
+                    f"⚙️ **HỆ THỐNG REMIX ĐANG CHẠY**\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"🕹 Chế độ: `{mode.upper()}`\n"
+                    f"🛰 Trạng thái: `{status}`\n"
+                    f"📊 Tiến độ: `{bar}`\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━"
+                )
+                bot.edit_message_caption(render_text, call.message.chat.id, call.message.message_id, parse_mode='Markdown')
+                time.sleep(1.1)
+            except: break
 
-    def download_and_process():
+    threading.Thread(target=update_progress_ui).start()
+
+    def render_task():
         try:
-            # Metadata bá đạo: Ghi đè thông tin DoanCong🥷
-            meta_args = [
-                '-metadata', f'title={data["title"]} (Remix {MY_BRAND})',
+            # Metadata Ngụy trang nhúng sâu DoanCong🥷
+            meta = [
+                '-metadata', f'title={data["title"]} (Remix by {MY_BRAND})',
                 '-metadata', f'artist={MY_BRAND}',
                 '-metadata', f'album={MY_BRAND} Exclusive 2026',
-                '-metadata', f'composer=DoanCong_Production'
+                '-metadata', f'composer={MY_BRAND} Prod.'
             ]
-
-            filter_audio = 'asetrate=44100*1.25,atempo=1.25/1.25,atempo=1.05' if mode == 'night' else 'atempo=1.20'
+            
+            filter_a = 'asetrate=44100*1.25,atempo=1.25/1.25,atempo=1.05' if mode == 'night' else 'atempo=1.20'
             
             ydl_opts = {
                 'format': 'bestaudio/best',
                 'outtmpl': f'{v_id}.%(ext)s',
                 'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
-                'postprocessor_args': ['-filter:a', filter_audio] + meta_args,
+                'postprocessor_args': ['-filter:a', filter_a] + meta,
                 'quiet': True,
-                'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
             }
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -164,26 +187,19 @@ def callback_handler(call):
             filename = f"{v_id}.mp3"
             if os.path.exists(filename):
                 user_db[uid]['count'] += 1
-                current_title = get_title(user_db[uid]['count'])
-
-                with open(filename, 'rb') as audio:
+                with open(filename, 'rb') as f:
                     bot.send_audio(
-                        data['chat_id'], audio,
-                        caption=f"✅ **Sản phẩm của đại ca {MY_BRAND}!**\n━━━━━━━━━━━━━\n🔥 Mode: `{mode.upper()}`\n🎖 Đẳng cấp: {current_title}",
-                        performer=MY_BRAND,
-                        title=f"{data['title']} (Remix)"
+                        call.message.chat.id, f,
+                        caption=f"✅ **BẢN REMIX ĐỘC QUYỀN!**\n━━━━━━━━━━━━━━━━━━━━━\n🥷 **Producer:** `{MY_BRAND}`\n🎖 Đẳng cấp: `{get_title(user_db[uid]['count'])}`",
+                        performer=MY_BRAND, title=f"{data['title']} (Remix)", parse_mode='Markdown'
                     )
                 os.remove(filename)
 
-            bot.delete_message(data['chat_id'], data['status_id'])
-            del processing_tasks[v_id]
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+            del task_map[v_id]
+        except:
+            bot.send_message(call.message.chat.id, "❌ Lỗi render nhạc rồi đại ca!")
 
-        except Exception as e:
-            bot.send_message(data['chat_id'], f"❌ Lỗi render: {str(e)[:100]}")
+    threading.Thread(target=render_task).start()
 
-    threading.Thread(target=download_and_process).start()
-
-# === CHẠY BOT ===
-if __name__ == '__main__':
-    print(f"--- BOT {MY_BRAND} ĐANG CHẠY ---")
-    bot.infinity_polling()
+bot.infinity_polling()
