@@ -1,4 +1,4 @@
-Import os
+import os
 import telebot
 import yt_dlp
 import time
