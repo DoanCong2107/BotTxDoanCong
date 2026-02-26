@@ -10,14 +10,14 @@ from telebot import types
 from datetime import datetime
 
 # === CẤU HÌNH HỆ THỐNG ===
-TOKEN = os.getenv('BOT_TOKEN')
+TOKEN = os.getenv('BOT_TOKEN') # Thay bằng Token thật nếu chạy máy cá nhân
 bot = telebot.TeleBot(TOKEN, threaded=True, num_threads=30)
 MY_BRAND = "DoanCong🥷"
 DB_FILE = 'user_data.json'
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# === HỆ THỐNG LƯU TRỮ ===
+# === HỆ THỐNG LƯU TRỮ DATABASE ===
 def load_db():
     if os.path.exists(DB_FILE):
         with open(DB_FILE, 'r', encoding='utf-8') as f:
@@ -31,6 +31,7 @@ def save_db():
 user_db = load_db()
 task_map = {}
 
+# Hệ thống danh hiệu
 TITLES = [
     (0, "🐣 Tân thủ Remix"), (5, "🥉 Học việc Remix"), (15, "🥈 Tay chơi Bass"),
     (30, "🥇 Phù thủy Remix"), (50, "🔥 Chiến thần Nhạc sàn"), (80, "💎 Cao thủ Mix nhạc"),
@@ -43,6 +44,7 @@ def get_title(count):
         if count >= threshold: return title
     return TITLES[0][1]
 
+# === GIAO DIỆN PHÒNG THU ===
 def main_kb():
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     kb.add(types.KeyboardButton('🔮 TRUY XUẤT NHẠC'), types.KeyboardButton('🪪 THẺ PRODUCER'))
@@ -50,7 +52,7 @@ def main_kb():
     kb.add(types.KeyboardButton('🧧 QUÀ HẰNG NGÀY'), types.KeyboardButton('🏆 BẢNG VÀNG'))
     return kb
 
-# === START VỚI HIỆU ỨNG GỐC ===
+# === LỆNH KHỞI ĐỘNG (XÁC THỰC GỐC) ===
 @bot.message_handler(commands=['start'])
 def start(message):
     uid = str(message.from_user.id)
@@ -77,31 +79,36 @@ def start(message):
     )
     bot.send_message(message.chat.id, welcome, reply_markup=main_kb(), parse_mode='Markdown')
 
-# === PAY LỆNH ===
+# === LỆNH CHUYỂN TIỀN ===
 @bot.message_handler(commands=['pay'])
 def pay_money(message):
     uid = str(message.from_user.id)
     try:
         args = message.text.split()
         if len(args) < 2 or not message.reply_to_message:
-            return bot.reply_to(message, "❌ Rep tin nhắn người nhận: `/pay [số tiền]`")
+            return bot.reply_to(message, "❌ Cách dùng: Rep tin nhắn người nhận rồi gõ `/pay [số tiền]`")
         amount = int(args[1])
         target_id = str(message.reply_to_message.from_user.id)
-        if amount <= 0 or user_db[uid]['balance'] < amount: return bot.reply_to(message, "❌ Nghèo mà sĩ à?")
+        if amount <= 0 or user_db[uid]['balance'] < amount:
+            return bot.reply_to(message, "❌ Tiền đâu mà chuyển đại ca?")
         user_db[uid]['balance'] -= amount
-        if target_id not in user_db: user_db[target_id] = {'balance':0, 'total_made':0, 'date':"N/A", 'last_daily':0}
+        if target_id not in user_db:
+            user_db[target_id] = {'balance': 0, 'total_made': 0, 'date': "N/A", 'last_daily': 0}
         user_db[target_id]['balance'] += amount
         save_db()
-        bot.reply_to(message, f"✅ Đã chuyển `{amount:,}đ`!")
-    except: bot.reply_to(message, "❌ Lỗi!")
+        bot.reply_to(message, f"✅ Đã chuyển `{amount:,}đ` cho {message.reply_to_message.from_user.first_name}!")
+    except:
+        bot.reply_to(message, "❌ Lỗi giao dịch!")
 
-# === XỬ LÝ TOÀN BỘ LỆNH VÀ TRÒ CHƠI ===
+# === XỬ LÝ SỰ KIỆN CHÍNH ===
 @bot.message_handler(func=lambda m: True)
 def handle_all(message):
     uid = str(message.from_user.id)
-    if uid not in user_db: user_db[uid] = {'balance': 5000, 'total_made': 0, 'date': datetime.now().strftime("%d/%m/%Y"), 'last_daily': 0}
+    if uid not in user_db:
+        user_db[uid] = {'balance': 5000, 'total_made': 0, 'date': datetime.now().strftime("%d/%m/%Y"), 'last_daily': 0}
     text = message.text.strip()
 
+    # Xử lý các nút Menu
     if text == '🪪 THẺ PRODUCER':
         data = user_db[uid]
         card = (f"```\n┌──────────────────────────────┐\n│    PRODUCER IDENTITY CARD    │\n├──────────────────────────────┤\n"
@@ -114,78 +121,81 @@ def handle_all(message):
         if now - user_db[uid]['last_daily'] > 86400:
             bonus = random.randint(1000, 5000); user_db[uid]['balance'] += bonus
             user_db[uid]['last_daily'] = now; save_db()
-            bot.reply_to(message, f"🧧 **LỤM LÚA!** Nhận `{bonus:,} VNĐ`!")
-        else: bot.reply_to(message, "⏳ Mai quay lại!"); return
+            bot.reply_to(message, f"🧧 **LỤM LÚA!** Đại ca nhận được `{bonus:,} VNĐ`!")
+        else: bot.reply_to(message, "⏳ Quà đã lụm, mai quay lại nha đại ca!"); return
 
     if text == '🏆 BẢNG VÀNG':
         top = sorted(user_db.items(), key=lambda x: x[1]['balance'], reverse=True)[:5]
-        lt = "🏆 **TOP 5 ĐẠI GIA**\n"
-        for i, (id, d) in enumerate(top): lt += f"{i+1}. `{get_title(d['total_made'])}` - {d['balance']:,}đ\n"
+        lt = "🏆 **TOP 5 ĐẠI GIA PRODUCER**\n━━━━━━━━━━━━━━━━━━━━━\n"
+        for i, (id, d) in enumerate(top):
+            lt += f"{i+1}. `{get_title(d['total_made'])}` - {d['balance']:,}đ\n"
         bot.send_message(message.chat.id, lt, parse_mode='Markdown'); return
 
     if text == '⚖️ TÀI XỈU':
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("🌑 TÀI", callback_data="tx|tai"), types.InlineKeyboardButton("🌕 XỈU", callback_data="tx|xiu"))
-        bot.send_message(message.chat.id, "⚖️ **TÀI XỈU (5,000đ)**", reply_markup=markup, parse_mode='Markdown'); return
+        markup.add(types.InlineKeyboardButton("🌑 TÀI (11-18)", callback_data="tx|tai"),
+                   types.InlineKeyboardButton("🌕 XỈU (3-10)", callback_data="tx|xiu"))
+        bot.send_message(message.chat.id, "⚖️ **SÒNG TÀI XỈU**\nMức cược: `5,000đ`", reply_markup=markup, parse_mode='Markdown'); return
 
     if text == '🎲 BẦU CUA':
         markup = types.InlineKeyboardMarkup(row_width=3)
-        icons = {"bau": "🎃", "cua": "🦀", "tom": "🦞", "ca": "🐟", "ga": "🐓", "nai": "🦌"}
+        icons = {"bau": "🎃 Bầu", "cua": "🦀 Cua", "tom": "🦞 Tôm", "ca": "🐟 Cá", "ga": "🐓 Gà", "nai": "🦌 Nai"}
         btns = [types.InlineKeyboardButton(v, callback_data=f"bc|{k}") for k, v in icons.items()]
         markup.add(*btns)
-        bot.send_message(message.chat.id, "🎲 **BẦU CUA (5,000đ)**", reply_markup=markup, parse_mode='Markdown'); return
+        bot.send_message(message.chat.id, "🎲 **SÒNG BẦU CUA**\nMức cược: `5,000đ`", reply_markup=markup, parse_mode='Markdown'); return
 
-    if text.startswith('/') or text == '🔮 TRUY XUẤT NHẠC': return
+    # CHỈ TÌM NHẠC KHI GỬI LINK YOUTUBE
+    if 'youtube.com' in text or 'youtu.be' in text:
+        wait = bot.send_message(message.chat.id, "🔮 `Đang thâm nhập dữ liệu...`", parse_mode='Markdown')
+        def search_task():
+            try:
+                ydl_opts = {'quiet': True, 'default_search': 'ytsearch1', 'noplaylist': True}
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(text, download=False)
+                    if 'entries' in info: info = info['entries'][0]
+                    v_id = info['id']; task_map[v_id] = {'url': info['webpage_url'], 'title': info['title']}
+                    markup = types.InlineKeyboardMarkup(row_width=1)
+                    markup.add(types.InlineKeyboardButton("🎧 Remix Nightcore (Studio)", callback_data=f"mix|night|{v_id}"),
+                               types.InlineKeyboardButton("⚡ Speed Up 1.2x (Power)", callback_data=f"mix|speed|{v_id}"))
+                    cap = (f"🎬 **KẾT QUẢ TRUY XUẤT**\n━━━━━━━━━━━━━━━━━━━━━\n🎼 Bài: `{info['title']}`\n⏱ Dài: `{time.strftime('%M:%S', time.gmtime(info['duration']))}`\n"
+                           f"🎚️ Master Volume: `+6dB` | 🎛️ Bass: `Max`\n━━━━━━━━━━━━━━━━━━━━━\n👇 **Chọn chế độ Mix:**")
+                    bot.send_photo(message.chat.id, info['thumbnail'], caption=cap, reply_markup=markup, parse_mode='Markdown')
+                    bot.delete_message(message.chat.id, wait.message_id)
+            except: bot.edit_message_text("❌ Lỗi truy xuất YouTube!", message.chat.id, wait.message_id)
+        threading.Thread(target=search_task).start()
 
-    # --- TRUY XUẤT NHẠC (BẢN GỐC) ---
-    wait = bot.send_message(message.chat.id, "🔮 `Đang thâm nhập dữ liệu...`", parse_mode='Markdown')
-    def search_task():
-        try:
-            ydl_opts = {'quiet': True, 'default_search': 'ytsearch1', 'noplaylist': True}
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(text, download=False)
-                if 'entries' in info: info = info['entries'][0]
-                v_id = info['id']; task_map[v_id] = {'url': info['webpage_url'], 'title': info['title']}
-                markup = types.InlineKeyboardMarkup(row_width=1)
-                markup.add(types.InlineKeyboardButton("🎧 Remix Nightcore", callback_data=f"mix|night|{v_id}"),
-                           types.InlineKeyboardButton("⚡ Speed Up 1.2x", callback_data=f"mix|speed|{v_id}"))
-                cap = (f"🎬 **KẾT QUẢ TRUY XUẤT**\n━━━━━━━━━━━━━━━━━━━━━\n🎼 Bài: `{info['title']}`\n⏱ Dài: `{time.strftime('%M:%S', time.gmtime(info['duration']))}`\n"
-                       f"🎚️ Master Volume: `+6dB` | 🎛️ Bass: `Max`\n━━━━━━━━━━━━━━━━━━━━━\n👇 **Chọn chế độ Mix cho đại ca:**")
-                bot.send_photo(message.chat.id, info['thumbnail'], caption=cap, reply_markup=markup, parse_mode='Markdown')
-                bot.delete_message(message.chat.id, wait.message_id)
-        except: bot.edit_message_text("❌ Lỗi!", message.chat.id, wait.message_id)
-    threading.Thread(target=search_task).start()
-
-# === CALLBACK XỬ LÝ (GỒM HIỆU ỨNG RENDER GỐC) ===
+# === CALLBACK XỬ LÝ GAME & RENDER (GIỮ HIỆU ỨNG GỐC) ===
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
     uid = str(call.from_user.id); data = call.data.split('|')
 
     if data[0] == 'tx':
         bet = 5000
-        if user_db[uid]['balance'] < bet: return bot.answer_callback_query(call.id, "Hết tiền!", show_alert=True)
+        if user_db[uid]['balance'] < bet: return bot.answer_callback_query(call.id, "❌ Hết tiền!", show_alert=True)
         user_db[uid]['balance'] -= bet
         d = [random.randint(1, 6) for _ in range(3)]; t = sum(d); r = "tai" if t >= 11 else "xiu"
-        msg = f"🎲 Kết quả: `{' + '.join(map(str, d))}` = **{t}**\n"
+        msg = f"🎲 Kết quả: `{' + '.join(map(str, d))}` = **{t}** ({r.upper()})\n"
         if data[1] == r: user_db[uid]['balance'] += bet*2; msg += "🎊 **HÚP LÚA!**"
         else: msg += "💀 **XỊT!**"
         bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, parse_mode='Markdown'); save_db()
 
     elif data[0] == 'bc':
         bet = 5000
-        if user_db[uid]['balance'] < bet: return bot.answer_callback_query(call.id, "Hết tiền!", show_alert=True)
+        if user_db[uid]['balance'] < bet: return bot.answer_callback_query(call.id, "❌ Hết tiền!", show_alert=True)
         user_db[uid]['balance'] -= bet
         icons = {"bau": "🎃", "cua": "🦀", "tom": "🦞", "ca": "🐟", "ga": "🐓", "nai": "🦌"}
         res = [random.choice(list(icons.keys())) for _ in range(3)]; match = res.count(data[1])
-        msg = f"🎲 Kết quả: {' '.join([icons[r] for r in res])}\n"
-        if match > 0: win = bet * (match + 1); user_db[uid]['balance'] += win; msg += f"🎊 **HÚP!** Nhận `{win:,}đ`"
+        msg = f"🎲 Kết quả: {' '.join([icons[x] for x in res])}\n"
+        if match > 0:
+            win = bet * (match + 1); user_db[uid]['balance'] += win
+            msg += f"🎊 **HÚP!** Nhận `{win:,}đ`"
         else: msg += "💀 **XỊT!**"
         bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, parse_mode='Markdown'); save_db()
 
     elif data[0] == 'mix':
         mode, v_id = data[1], data[2]; info = task_map.get(v_id)
         
-        # HIỆU ỨNG RENDER GỐC CỦA ĐẠI CA
+        # HIỆU ỨNG RENDER GỐC
         def update_ui():
             steps = [("🚨 CẢNH BÁO: ÉP XUNG CPU...", "15s", "[ ░░░░░░░░░░ ] 5%"),
                      ("⚙️ ĐANG XỬ LÝ NHẠC NẶNG...", "12s", "[ ██░░░░░░░░ ] 25%"),
@@ -208,10 +218,11 @@ def handle_callback(call):
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl: ydl.download([info['url']])
                 
                 with open(f"{v_id}.mp3", 'rb') as f:
-                    sal = random.randint(1000, 3000); user_db[uid]['balance'] += sal; user_db[uid]['total_made'] += 1; save_db()
-                    bot.send_audio(call.message.chat.id, f, caption=f"✅ **BẢN REMIX XUẤT XƯỞNG!**\n━━━━━━━━━━━━━\n🥷 **Producer:** `{MY_BRAND}`\n💰 Lương: `{sal:,}đ` | 🎖 Rank: `{get_title(user_db[uid]['total_made'])}`", parse_mode='Markdown')
+                    salary = random.randint(1000, 3000)
+                    user_db[uid]['balance'] += salary; user_db[uid]['total_made'] += 1; save_db()
+                    bot.send_audio(call.message.chat.id, f, caption=f"✅ **BẢN REMIX XUẤT XƯỞNG!**\n━━━━━━━━━━━━━\n🥷 **Producer:** `{MY_BRAND}`\n💰 Lương: `{salary:,}đ` | 🎖 Rank: `{get_title(user_db[uid]['total_made'])}`", parse_mode='Markdown')
                 os.remove(f"{v_id}.mp3"); bot.delete_message(call.message.chat.id, call.message.message_id)
-            except: bot.send_message(call.message.chat.id, "❌ Lỗi!")
+            except: bot.send_message(call.message.chat.id, "❌ Lỗi Render!")
         threading.Thread(target=render_task).start()
 
 bot.infinity_polling()
