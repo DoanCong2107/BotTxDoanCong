@@ -20,7 +20,7 @@ logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=lo
 user_db = {} 
 task_map = {}
 
-# Hệ thống 10 danh hiệu
+# Hệ thống 10 danh hiệu (dựa trên total_remix)
 TITLES = [
     (0, "🐣 Tân thủ Remix"), (5, "🥉 Học việc Remix"), (15, "🥈 Tay chơi Bass"),
     (30, "🥇 Phù thủy Remix"), (50, "🔥 Chiến thần Nhạc sàn"), (80, "💎 Cao thủ Mix nhạc"),
@@ -33,19 +33,25 @@ def get_title(count):
         if count >= threshold: return title
     return TITLES[0][1]
 
-# === GIAO DIỆN PHÒNG THU (STYLE 2) ===
+# === GIAO DIỆN PHÒNG THU ===
 def main_kb():
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     kb.add(types.KeyboardButton('🔮 TRUY XUẤT NHẠC'), types.KeyboardButton('🪪 THẺ PRODUCER'))
-    kb.add(types.KeyboardButton('🧧 QUÀ HẰNG NGÀY'), types.KeyboardButton('🏆 BẢNG VÀNG'))
+    kb.add(types.KeyboardButton('🧧 QUÀ HẰNG NGÀY'), types.KeyboardButton('🎲 TÀI XỈU'))
+    kb.add(types.KeyboardButton('🏆 BẢNG VÀNG'))
     return kb
 
-# === HIỆU ỨNG XÁC THỰC (STYLE 3) ===
+# === HIỆU ỨNG XÁC THỰC ===
 @bot.message_handler(commands=['start'])
 def start(message):
     uid = str(message.from_user.id)
     if uid not in user_db:
-        user_db[uid] = {'count': 0, 'date': datetime.now().strftime("%d/%m/%Y"), 'last_daily': 0}
+        user_db[uid] = {
+            'balance': 50,           # tặng khởi đầu
+            'total_remix': 0,
+            'date': datetime.now().strftime("%d/%m/%Y"),
+            'last_daily': 0
+        }
     
     # Hiệu ứng chữ chạy xác thực
     auth_msg = bot.send_message(message.chat.id, "⌛ `Đang quét vân tay...`", parse_mode='Markdown')
@@ -54,15 +60,15 @@ def start(message):
     time.sleep(0.8)
     bot.delete_message(message.chat.id, auth_msg.message_id)
 
-    # Giao diện chính kèm Trạng thái (Style 1)
+    # Giao diện chính kèm Trạng thái
     welcome = (
         f"        ── {MY_BRAND} ──\n"
         f"🥷 **SUPREME REMIX SYSTEM 2026**\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"👋 Chào đại ca: **{message.from_user.first_name}**\n"
-        f"🛰 Server: `Online 🟢` | 🔋 Năng lượng: `100%` \n"
-        f"🎖 Cấp bậc: `{get_title(user_db[uid]['count'])}`\n"
-        f"📊 Sản phẩm: `{user_db[uid]['count']} bài`\n"
+        f"🛰 Server: `Online 🟢` | 💰 Số dư: `{user_db[uid]['balance']} DCoin`\n"
+        f"🎖 Cấp bậc: `{get_title(user_db[uid]['total_remix'])}`\n"
+        f"📀 Đã remix: `{user_db[uid]['total_remix']} bài`\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"🎙 **Hệ thống phòng thu đã sẵn sàng lên nhạc!**"
     )
@@ -72,35 +78,65 @@ def start(message):
 @bot.message_handler(func=lambda m: True)
 def handle_all(message):
     uid = str(message.from_user.id)
-    if uid not in user_db: user_db[uid] = {'count': 0, 'date': "N/A", 'last_daily': 0}
+    if uid not in user_db: 
+        user_db[uid] = {'balance': 50, 'total_remix': 0, 'date': "N/A", 'last_daily': 0}
     text = message.text.strip()
 
-    # Thẻ Căn Cước Producer (Style 5)
+    # Thẻ Căn Cước Producer
     if text == '🪪 THẺ PRODUCER':
-        count = user_db[uid]['count']
+        balance = user_db[uid].get('balance', 0)
+        remix_count = user_db[uid].get('total_remix', 0)
         card = (
             f"```\n"
             f"┌──────────────────────────────┐\n"
             f"│    PRODUCER IDENTITY CARD    │\n"
             f"├──────────────────────────────┤\n"
-            f"│ NAME: {MY_BRAND[:15]:<15} │\n"
-            f"│ RANK: {get_title(count):<15} │\n"
-            f"│ EXP:  {count:<15} │\n"
-            f"│ DATE: {user_db[uid]['date']:<15} │\n"
+            f"│ NAME: {message.from_user.first_name[:15]:<15} │\n"
+            f"│ RANK: {get_title(remix_count):<15} │\n"
+            f"│ DCoin: {balance:<15} │\n"
+            f"│ REMIX: {remix_count:<15} │\n"
+            f"│ DATE: {user_db[uid].get('date', 'N/A'):<15} │\n"
             f"└──────────────────────────────┘\n"
             f"```"
         )
         bot.send_message(message.chat.id, card, parse_mode='Markdown')
         return
 
+    # Quà hằng ngày
     if text == '🧧 QUÀ HẰNG NGÀY':
         now = time.time()
         if now - user_db[uid]['last_daily'] > 86400:
-            bonus = random.randint(1, 3)
-            user_db[uid]['count'] += bonus
+            bonus = random.randint(10, 30)
+            user_db[uid]['balance'] = user_db[uid].get('balance', 0) + bonus
             user_db[uid]['last_daily'] = now
-            bot.reply_to(message, f"🧧 **HÀNG NÓNG!** Đại ca nhận được `{bonus}` Exp!")
-        else: bot.reply_to(message, "⏳ Quà đã lụm, mai quay lại nha đại ca!")
+            bot.reply_to(message, f"🧧 **HÀNG NÓNG!** Đại ca nhận được `{bonus} DCoin`!")
+        else: 
+            bot.reply_to(message, "⏳ Quà đã lụm, mai quay lại nha đại ca!")
+        return
+
+    # Tài Xỉu
+    if text == '🎲 TÀI XỈU':
+        balance = user_db[uid].get('balance', 0)
+        if balance < 10:
+            bot.reply_to(message, "💸 Số dư dưới 10 DCoin, remix nhạc kiếm thêm vốn đi!")
+            return
+
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("TÀI (11-18)", callback_data="taixiu|tai"),
+            types.InlineKeyboardButton("XỈU (3-10)", callback_data="taixiu|xiu")
+        )
+        bot.send_message(
+            message.chat.id,
+            f"🎲 **TÀI XỈU VIP**\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"💰 Số dư: `{balance} DCoin`\n"
+            f"• Cược mỗi ván: 20 DCoin\n"
+            f"• Thắng ăn ≈1.9x\n"
+            f"Chọn cửa nào đại ca?",
+            reply_markup=markup,
+            parse_mode='Markdown'
+        )
         return
 
     if text.startswith('/') or text in ['🔮 TRUY XUẤT NHẠC', '🏆 BẢNG VÀNG']: return
@@ -135,11 +171,12 @@ def handle_all(message):
                 )
                 bot.send_photo(message.chat.id, info['thumbnail'], caption=caption, reply_markup=markup, parse_mode='Markdown')
                 bot.delete_message(message.chat.id, wait.message_id)
-        except: bot.edit_message_text("❌ Lỗi truy xuất!", message.chat.id, wait.message_id)
+        except: 
+            bot.edit_message_text("❌ Lỗi truy xuất!", message.chat.id, wait.message_id)
 
     threading.Thread(target=search_task).start()
 
-# === CẢNH BÁO ĐỎ & ĐẾM NGƯỢC (STYLE 7 & 12) ===
+# === XỬ LÝ CALLBACK REMIX ===
 @bot.callback_query_handler(func=lambda call: call.data.startswith('doan|'))
 def process_callback(call):
     _, mode, v_id = call.data.split('|')
@@ -147,7 +184,6 @@ def process_callback(call):
     uid = str(call.from_user.id)
 
     def update_ui():
-        # Hiệu ứng cảnh báo đỏ và đếm ngược
         steps = [
             ("🚨 CẢNH BÁO: ÉP XUNG CPU...", "15s", "[ ░░░░░░░░░░ ] 5%"),
             ("⚙️ ĐANG XỬ LÝ NHẠC NẶNG...", "12s", "[ ██░░░░░░░░ ] 25%"),
@@ -195,17 +231,62 @@ def process_callback(call):
             
             filename = f"{v_id}.mp3"
             if os.path.exists(filename):
-                user_db[uid]['count'] += 1
+                reward = random.randint(5, 15)
+                user_db[uid]['balance'] = user_db[uid].get('balance', 0) + reward
+                user_db[uid]['total_remix'] = user_db[uid].get('total_remix', 0) + 1
+                
                 with open(filename, 'rb') as f:
                     bot.send_audio(
                         call.message.chat.id, f,
-                        caption=f"✅ **BẢN REMIX XUẤT XƯỞNG!**\n━━━━━━━━━━━━━\n🥷 **Producer:** `{MY_BRAND}`\n🎖 **Rank:** `{get_title(user_db[uid]['count'])}`",
+                        caption=f"✅ **BẢN REMIX XUẤT XƯỞNG!**\n━━━━━━━━━━━━━\n🥷 **Producer:** `{MY_BRAND}`\n🎖 **Rank:** `{get_title(user_db[uid]['total_remix'])}`\n🪙 **Thưởng:** +{reward} DCoin\n💰 **Số dư:** {user_db[uid]['balance']} DCoin",
                         performer=MY_BRAND, title=f"{data['title']} (Remix)", parse_mode='Markdown'
                     )
                 os.remove(filename)
             bot.delete_message(call.message.chat.id, call.message.message_id)
-        except: bot.send_message(call.message.chat.id, "❌ Lỗi Render!")
+        except: 
+            bot.send_message(call.message.chat.id, "❌ Lỗi Render!")
 
     threading.Thread(target=render_task).start()
+
+# === CALLBACK TÀI XỈU ===
+@bot.callback_query_handler(func=lambda call: call.data.startswith('taixiu|'))
+def taixiu_callback(call):
+    _, choice = call.data.split('|')
+    uid = str(call.from_user.id)
+    
+    if uid not in user_db:
+        bot.answer_callback_query(call.id, "Chưa khởi động bot!", show_alert=True)
+        return
+    
+    balance = user_db[uid].get('balance', 0)
+    bet = 20
+    
+    if balance < bet:
+        bot.answer_callback_query(call.id, "Không đủ DCoin cược!", show_alert=True)
+        return
+    
+    dice1 = random.randint(1,6)
+    dice2 = random.randint(1,6)
+    dice3 = random.randint(1,6)
+    total = dice1 + dice2 + dice3
+    is_big = total >= 11
+    
+    win = (choice == 'tai' and is_big) or (choice == 'xiu' and not is_big)
+    
+    if win:
+        win_amount = int(bet * 1.9)
+        user_db[uid]['balance'] += (win_amount - bet)
+        text = f"🎲 {dice1}-{dice2}-{dice3} = **{total}** → **THẮNG {choice.upper()}!**\n+{win_amount - bet} DCoin"
+    else:
+        user_db[uid]['balance'] -= bet
+        text = f"🎲 {dice1}-{dice2}-{dice3} = **{total}** → **THUA {choice.upper()}!**\n-{bet} DCoin"
+    
+    bot.edit_message_text(
+        f"{text}\n\nSố dư hiện tại: **{user_db[uid]['balance']} DCoin**\nChơi tiếp hay remix kiếm vốn?",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='Markdown'
+    )
+    bot.answer_callback_query(call.id)
 
 bot.infinity_polling()
