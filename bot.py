@@ -22,7 +22,7 @@ def handle_message(message):
         
         # Gọi Gemini API sử dụng model phù hợp (gemini-2.5-flash tối ưu cho chatbot tốc độ cao)
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-2.0-flash',
             contents=message.text,
         )
         
