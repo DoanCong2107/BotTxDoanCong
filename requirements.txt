@@ -1,2 +1,2 @@
-anthropic
-python-telegram-bot
+pyTelegramBotAPI
+google-genai
