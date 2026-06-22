@@ -1,2 +1,2 @@
-pyTelegramBotAPI
-yt-dlp
+anthropic
+python-telegram-bot
