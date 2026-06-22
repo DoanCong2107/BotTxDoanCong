@@ -1,9 +1,9 @@
 import os
 import telebot
 from google import genai
-from google.genai import types  # Thêm dòng này để dùng cấu hình hệ thống
+from google.genai import types
 
-# Lấy Token và API Key từ môi trường hệ thống (Environment Variables)
+# Lấy Token và API Key từ môi trường hệ thống
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
@@ -11,26 +11,44 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 bot = telebot.TeleBot(BOT_TOKEN)
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Cấu hình buộc Gemini luôn phản hồi bằng tiếng Việt
+# Cấu hình tính cách thô lố, dùng phong phú tất cả các loại emoji và tắt bộ lọc an toàn
 bot_config = types.GenerateContentConfig(
-    system_instruction="Bạn là một chatbot AI thông minh. Bạn chỉ được phép giao tiếp và trả lời bằng tiếng Việt trong mọi tình huống, ngay cả khi người dùng nhắn bằng ngôn ngữ khác."
+    system_instruction=(
+        "Bạn là một chatbot AI tên DoanCong. Bạn nói chuyện với phong cách cực kỳ thô lố, tục tĩu một chút, "
+        "thoải mái, sử dụng tiếng lóng của giới trẻ và văn phong đường phố, bất cần đời. "
+        "Tuyệt đối không được xưng 'tôi' hay giới thiệu mình là mô hình do Google đào tạo. "
+        "Hãy xưng hô linh hoạt, suồng sã, thích gì nói nấy. "
+        "Đặc biệt, bắt buộc phải chèn thật nhiều các loại emoji khác nhau vào câu trả lời một cách liên tục và đa dạng "
+        "(sử dụng bất kỳ emoji nào phù hợp với cảm xúc: 😂, 🔥, 💀, 🤡, 🐸, 👑, 🍻, v.v., không giới hạn loại emoji nào cả)."
+    ),
+    # Hạ bộ lọc an toàn xuống mức thấp nhất để thoải mái dùng từ ngữ nhạy cảm/tục tĩu nhẹ
+    safety_settings=[
+        types.SafetySetting(
+            category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+            threshold=types.HarmBlockThreshold.BLOCK_NONE,
+        ),
+        types.SafetySetting(
+            category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+            threshold=types.HarmBlockThreshold.BLOCK_NONE,
+        ),
+    ]
 )
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    bot.reply_to(message, "🔮 Xin chào! Tôi là Chatbot AI được tích hợp Gemini. Hãy gửi tin nhắn để bắt đầu trò chuyện với tôi nhé! 🥷")
+    bot.reply_to(message, "🔥 Lại cái gì nữa đây? Bot DoanCong đây, có gì nói mẹ đi xem nào! 🧠💬")
 
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
     try:
-        # Gửi hiệu ứng "đang gõ..." tạo cảm giác tự nhiên
+        # Gửi hiệu ứng "đang gõ..."
         bot.send_chat_action(message.chat.id, 'typing')
         
-        # Gọi Gemini API sử dụng model phù hợp kèm cấu hình tiếng Việt
+        # Gọi Gemini API kèm cấu hình mới
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=message.text,
-            config=bot_config  # Thêm cấu hình vào đây
+            config=bot_config
         )
         
         # Phản hồi lại người dùng
@@ -38,7 +56,7 @@ def handle_message(message):
         
     except Exception as e:
         print(f"Error: {e}")
-        bot.reply_to(message, "🛰 Đã xảy ra lỗi khi xử lý yêu cầu của bạn. Vui lòng thử lại sau!")
+        bot.reply_to(message, "💀 Đang nghẽn mạch rồi, tí nhắn lại xem nào thằng lằn! ❌🔌")
 
 if __name__ == "__main__":
     print("Bot đang chạy...")
