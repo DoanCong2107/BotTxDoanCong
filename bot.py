@@ -41,7 +41,7 @@ def send_welcome(message):
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
     user_text = str(message.text)
-    max_retries = 5  # Số lần tự động request lại tối đa
+    max_retries = 4  # Số lần tự động request lại tối đa
     retry_delay = 3  # Thời gian chờ (giây) giữa các lần thử lại
 
     for attempt in range(max_retries):
