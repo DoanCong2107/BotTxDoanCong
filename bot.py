@@ -23,39 +23,41 @@ def download_youtube(message):
     msg = bot.reply_to(message, "⏳ Đang tải nhạc, đợi bot chút nhé...")
     filename = None
     
-    # 1. Bỏ giới hạn max_filesize để tránh lỗi "Format not available"
-    # 2. Thêm client iOS để đa dạng hóa định dạng lấy được
+    # Cấu hình bao trọn gói: Lấy audio tốt nhất, bỏ giả lập thiết bị để tránh bị YouTube giấu định dạng
     ydl_opts = {
-        'format': 'bestaudio[ext=m4a]/bestaudio/best', 
+        'format': 'bestaudio/best', 
         'outtmpl': '%(id)s.%(ext)s', 
         'cookiefile': 'cookies.txt',
-        'noplaylist': True,
-        'extractor_args': {'youtube': {'player_client': ['android', 'ios', 'web']}}
+        'noplaylist': True
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
+            # Lấy chính xác tên file vừa tải về (có thể là .webm hoặc .m4a)
             filename = ydl.prepare_filename(info)
             title = info.get('title', 'Audio')
 
-        # Gửi thẳng file âm thanh gốc lên Telegram
-        with open(filename, 'rb') as audio:
-            bot.send_audio(message.chat.id, audio, title=title)
-        
-        # Dọn rác sau khi gửi thành công
-        os.remove(filename)
-        bot.delete_message(message.chat.id, msg.message_id)
+        # MẸO: Đổi đuôi file thành .mp3 để lừa Telegram nhận diện đây là file âm thanh
+        if filename and os.path.exists(filename):
+            mp3_filename = f"{info['id']}.mp3"
+            os.rename(filename, mp3_filename)
+            
+            with open(mp3_filename, 'rb') as audio:
+                bot.send_audio(message.chat.id, audio, title=title)
+            
+            # Dọn rác
+            os.remove(mp3_filename)
+            bot.delete_message(message.chat.id, msg.message_id)
         
     except Exception as e:
         error_msg = str(e)
-        # Bắt lỗi Telegram không cho gửi file quá 50MB
         if "Entity Too Large" in error_msg or "too large" in error_msg.lower():
-            bot.edit_message_text("❌ Lỗi: Bài hát quá dài hoặc chất lượng quá cao (Vượt giới hạn 50MB của nền tảng Telegram).", message.chat.id, msg.message_id)
+            bot.edit_message_text("❌ Lỗi: Bài hát vượt quá giới hạn 50MB của Telegram.", message.chat.id, msg.message_id)
         else:
             bot.edit_message_text(f"❌ Lỗi: {error_msg}", message.chat.id, msg.message_id)
         
-        # Xóa file rác trong máy chủ nếu quá trình gửi thất bại
+        # Dọn file rác nếu bị lỗi giữa chừng
         if filename and os.path.exists(filename):
             os.remove(filename)
 
