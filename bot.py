@@ -23,22 +23,22 @@ def download_youtube(message):
     msg = bot.reply_to(message, "⏳ Đang tải nhạc, đợi bot chút nhé...")
     filename = None
     
-    # Cấu hình bao trọn gói: Lấy audio tốt nhất, bỏ giả lập thiết bị để tránh bị YouTube giấu định dạng
+    # Cấu hình tối giản nhất, đã bỏ phần ép mạng
     ydl_opts = {
-        'format': 'bestaudio/best', 
+        'format': 'ba/b',
         'outtmpl': '%(id)s.%(ext)s', 
         'cookiefile': 'cookies.txt',
-        'noplaylist': True
+        'noplaylist': True,
+        'nocheckcertificate': True
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            # Lấy chính xác tên file vừa tải về (có thể là .webm hoặc .m4a)
             filename = ydl.prepare_filename(info)
             title = info.get('title', 'Audio')
 
-        # MẸO: Đổi đuôi file thành .mp3 để lừa Telegram nhận diện đây là file âm thanh
+        # Đổi đuôi file thành .mp3 để Telegram nhận diện là nhạc
         if filename and os.path.exists(filename):
             mp3_filename = f"{info['id']}.mp3"
             os.rename(filename, mp3_filename)
