@@ -22,10 +22,12 @@ def download_youtube(message):
     url = text[1]
     msg = bot.reply_to(message, "⏳ Đang tải nhạc, đợi bot chút nhé...")
     
+    # Đã thêm 'cookiefile': 'cookies.txt' để vượt qua xác minh Bot của YouTube
     ydl_opts = {
         'format': 'm4a/bestaudio/best',
         'outtmpl': '%(id)s.%(ext)s', 
         'max_filesize': 50000000, 
+        'cookiefile': 'cookies.txt',
     }
 
     try:
