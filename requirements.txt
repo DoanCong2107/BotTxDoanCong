@@ -1,2 +1,3 @@
 pyTelegramBotAPI
-google-genai
+yt-dlp
+Flask
