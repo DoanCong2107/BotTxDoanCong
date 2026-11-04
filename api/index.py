@@ -1,32 +1,33 @@
-import yt_dlp
+from flask import Flask, request
+import telebot
 import os
 
-def download_yt_audio(url, chat_id, bot):
-    # Cấu hình chỉ tải audio và convert sang mp3
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192', # Chất lượng 192kbps
-        }],
-        'outtmpl': '%(id)s.%(ext)s', # Đặt tên file theo ID video
-        'max_filesize': 50000000, # Giới hạn 50MB (Limit của Telegram)
-    }
+# 1. Khởi tạo ứng dụng Flask (Đây chính là biến "app" mà Vercel đang đòi)
+app = Flask(__name__)
 
-    try:
-        # Tải file
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = f"{info['id']}.mp3"
-            title = info.get('title', 'Audio')
+# 2. Khởi tạo Bot (Lấy token từ biến môi trường của Vercel để bảo mật)
+# Nhớ cài đặt biến BOT_TOKEN trong phần Environment Variables của Vercel
+BOT_TOKEN = os.getenv('BOT_TOKEN', 'ĐIỀN_TOKEN_CỦA_BẠN_VÀO_ĐÂY_NẾU_KHÔNG_DÙNG_BIẾN_MÔI_TRƯỜNG')
+bot = telebot.TeleBot(BOT_TOKEN)
 
-        # Gửi file mp3 qua Telegram
-        with open(filename, 'rb') as audio:
-            bot.send_audio(chat_id, audio, title=title)
-        
-        # Xóa file sau khi gửi xong để nhẹ server
-        os.remove(filename)
+# 3. Các lệnh của bot (Ví dụ lệnh /start)
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    bot.reply_to(message, "Xin chào! Bot đang chạy vĩnh viễn trên Vercel ⚡")
 
-    except Exception as e:
-        bot.send_message(chat_id, f"Lỗi khi tải: {str(e)}")
+# 4. Cổng nhận tin nhắn từ Telegram (Webhook)
+@app.route('/', defaults={'path': ''}, methods=['POST'])
+@app.route('/<path:path>', methods=['POST'])
+def webhook(path):
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return "OK", 200
+    return "Forbidden", 403
+
+# 5. Cổng kiểm tra xem server có sống không (Truy cập bằng trình duyệt)
+@app.route('/', defaults={'path': ''}, methods=['GET'])
+@app.route('/<path:path>', methods=['GET'])
+def index(path):
+    return "Server Bot đang hoạt động bình thường!", 200
