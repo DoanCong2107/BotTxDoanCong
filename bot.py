@@ -21,20 +21,21 @@ def download_youtube(message):
     
     url = text[1]
     msg = bot.reply_to(message, "⏳ Đang tải nhạc, đợi bot chút nhé...")
+    filename = None
     
-    # Giả dạng client Android để vượt rào chống bot của YouTube
+    # 1. Bỏ giới hạn max_filesize để tránh lỗi "Format not available"
+    # 2. Thêm client iOS để đa dạng hóa định dạng lấy được
     ydl_opts = {
-        'format': 'ba/best', # Chỉ lấy audio tốt nhất
+        'format': 'bestaudio[ext=m4a]/bestaudio/best', 
         'outtmpl': '%(id)s.%(ext)s', 
-        'max_filesize': 50000000, 
         'cookiefile': 'cookies.txt',
-        'extractor_args': {'youtube': {'player_client': ['android', 'web']}} # Tuyệt chiêu mở khóa định dạng
+        'noplaylist': True,
+        'extractor_args': {'youtube': {'player_client': ['android', 'ios', 'web']}}
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            # Lấy tên file gốc yt-dlp tải về (không gán cứng đuôi)
             filename = ydl.prepare_filename(info)
             title = info.get('title', 'Audio')
 
@@ -42,12 +43,21 @@ def download_youtube(message):
         with open(filename, 'rb') as audio:
             bot.send_audio(message.chat.id, audio, title=title)
         
-        # Dọn rác sau khi gửi xong
+        # Dọn rác sau khi gửi thành công
         os.remove(filename)
         bot.delete_message(message.chat.id, msg.message_id)
         
     except Exception as e:
-        bot.edit_message_text(f"❌ Lỗi: {str(e)}", message.chat.id, msg.message_id)
+        error_msg = str(e)
+        # Bắt lỗi Telegram không cho gửi file quá 50MB
+        if "Entity Too Large" in error_msg or "too large" in error_msg.lower():
+            bot.edit_message_text("❌ Lỗi: Bài hát quá dài hoặc chất lượng quá cao (Vượt giới hạn 50MB của nền tảng Telegram).", message.chat.id, msg.message_id)
+        else:
+            bot.edit_message_text(f"❌ Lỗi: {error_msg}", message.chat.id, msg.message_id)
+        
+        # Xóa file rác trong máy chủ nếu quá trình gửi thất bại
+        if filename and os.path.exists(filename):
+            os.remove(filename)
 
 # Web Server giả để Render không tắt bot và để cron-job ping vào
 @app.route('/')
