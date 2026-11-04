@@ -22,9 +22,9 @@ def download_youtube(message):
     url = text[1]
     msg = bot.reply_to(message, "⏳ Đang tải nhạc, đợi bot chút nhé...")
     
-    # Đã thêm 'cookiefile': 'cookies.txt' để vượt qua xác minh Bot của YouTube
+    # Sửa lại format: Ưu tiên m4a, nếu không có thì tự động lấy audio tốt nhất hiện có
     ydl_opts = {
-        'format': 'm4a/bestaudio/best',
+        'format': 'bestaudio[ext=m4a]/bestaudio/best',
         'outtmpl': '%(id)s.%(ext)s', 
         'max_filesize': 50000000, 
         'cookiefile': 'cookies.txt',
@@ -32,15 +32,24 @@ def download_youtube(message):
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # Tải file về
             info = ydl.extract_info(url, download=True)
-            filename = f"{info['id']}.m4a"
+            
+            # Tự động lấy tên file vừa tải (không gán cứng đuôi .m4a nữa)
+            filename = ydl.prepare_filename(info)
             title = info.get('title', 'Audio')
 
-        with open(filename, 'rb') as audio:
+        # Đổi đuôi ảo sang .mp3 để Telegram nhận diện là bài hát (dù gốc là webm)
+        new_filename = f"{info['id']}.mp3"
+        os.rename(filename, new_filename)
+
+        with open(new_filename, 'rb') as audio:
             bot.send_audio(message.chat.id, audio, title=title)
         
-        os.remove(filename)
+        # Xóa file rác
+        os.remove(new_filename)
         bot.delete_message(message.chat.id, msg.message_id)
+        
     except Exception as e:
         bot.edit_message_text(f"❌ Lỗi: {str(e)}", message.chat.id, msg.message_id)
 
